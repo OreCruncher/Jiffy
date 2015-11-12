@@ -1,0 +1,16 @@
+[
+{
+  "modid": "restructured",
+  "name": "Restructured",
+  "description": "Modify your world by adding structures",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "https://github.com/OreCruncher/Restructured/wiki",
+  "updateUrl": "",
+  "authorList": ["OreCruncher"],
+  "credits": "",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
