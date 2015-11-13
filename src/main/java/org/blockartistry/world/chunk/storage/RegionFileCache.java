@@ -1,4 +1,4 @@
-/* This file is part of Restructured, licensed under the MIT License (MIT).
+/* This file is part of Jiffy, licensed under the MIT License (MIT).
  *
  * Copyright (c) OreCruncher
  *
@@ -65,7 +65,7 @@ public class RegionFileCache {
 		// Just use the path provided for the save dir.  Since save directories are unique it
 		// serves the purpose.  Goal is to minimize the amount of computation creating the key
 		// and the amount of time it spends evaluating for a match in the underlying cache.
-		final RegionFileLRU.RegionFileKey key = new RegionFileLRU.RegionFileKey(saveDir, X, Z);
+		final RegionFileKey key = new RegionFileKey(saveDir, X, Z);
 
 		synchronized (regionsByFilename) {
 			RegionFile regionfile = regionsByFilename.get(key);

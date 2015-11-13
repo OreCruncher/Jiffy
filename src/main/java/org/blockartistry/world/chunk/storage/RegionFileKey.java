@@ -21,77 +21,39 @@
  * THE SOFTWARE.
  */
 
-package org.blockartistry.nbt;
+package org.blockartistry.world.chunk.storage;
 
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
+public final class RegionFileKey {
 
-import net.minecraftforge.common.util.Constants.NBT;
+	private final int chunkX;
+	private final int chunkZ;
+	private final String dir;
 
-public class NBTTagByte extends NBTPrimitive {
-
-	private byte data;
-
-	NBTTagByte() {
-	}
-
-	public NBTTagByte(final byte value) {
-		this.data = value;
+	public RegionFileKey(final String dir, final int regionX, final int regionZ) {
+		this.chunkX = regionX;
+		this.chunkZ = regionZ;
+		this.dir = dir;
 	}
 
 	@Override
-	void write(final DataOutput stream) throws IOException {
-		stream.writeByte(this.data);
-	}
-
-	@Override
-	void func_152446_a(final DataInput stream, final int depth, final NBTSizeTracker tracker) throws IOException {
-		tracker.func_152450_a(8L);
-		this.data = stream.readByte();
-	}
-
-	public byte getId() {
-		return NBT.TAG_BYTE;
-	}
-
-	public String toString() {
-		return "" + this.data + "b";
-	}
-
-	public NBTBase copy() {
-		return new NBTTagByte(this.data);
-	}
-
-	public boolean equals(final Object tag) {
-		return super.equals(tag) && this.data == ((NBTTagByte) tag).data;
-	}
-
 	public int hashCode() {
-		return super.hashCode() ^ this.data;
+		final int i = 1664525 * this.chunkX + 1013904223;
+		final int j = 1664525 * (this.chunkZ ^ -559038737) + 1013904223;
+		return i ^ j;
 	}
 
-	public long func_150291_c() {
-		return this.data;
+	@Override
+	public boolean equals(final Object anObj) {
+		if (this == anObj)
+			return true;
+
+		final RegionFileKey obj = (RegionFileKey) anObj;
+		return chunkX == obj.chunkX && chunkZ == obj.chunkZ && dir.equals(obj.dir);
 	}
 
-	public int func_150287_d() {
-		return this.data;
+	@Override
+	public String toString() {
+		return dir + " [" + chunkX + ", " + chunkZ + "]";
 	}
 
-	public short func_150289_e() {
-		return (short) this.data;
-	}
-
-	public byte func_150290_f() {
-		return this.data;
-	}
-
-	public double func_150286_g() {
-		return this.data;
-	}
-
-	public float func_150288_h() {
-		return this.data;
-	}
 }

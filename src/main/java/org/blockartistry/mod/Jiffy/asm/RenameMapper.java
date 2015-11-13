@@ -24,45 +24,22 @@
 
 package org.blockartistry.mod.Jiffy.asm;
 
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.objectweb.asm.commons.Remapper;
 
 public class RenameMapper extends Remapper {
 
-	private final Map<String, String> mapping;
 	private final Map<String, Map<String, String>> methodNameMap;
-
-	private static String massage(final String s) {
-		return s.replace('.', '/');
-	}
 
 	private static final Logger logger = LogManager.getLogger();
 	public RenameMapper() {
-		this.mapping = null;
 		this.methodNameMap = null;
 	}
 
-	public RenameMapper(Map<String, String> mapping) {
-		this(mapping, null);
-	}
-
-	public RenameMapper(Map<String, String> mapping, Map<String, Map<String, String>> methodMap) {
-		this.mapping = new HashMap<String, String>();
+	public RenameMapper(Map<String, Map<String, String>> methodMap) {
 		this.methodNameMap = methodMap;
-
-		for (final Entry<String, String> e : mapping.entrySet())
-			this.mapping.put(massage(e.getKey()), massage(e.getValue()));
-	}
-
-	public RenameMapper(String oldName, String newName) {
-		this.mapping = Collections.singletonMap(massage(oldName), massage(newName));
-		this.methodNameMap = null;
 	}
 
 	protected String resolveItemName(final String owner, final String item, final String desc) {

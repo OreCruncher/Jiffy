@@ -1,4 +1,4 @@
-/* This file is part of Restructured, licensed under the MIT License (MIT).
+/* This file is part of Jiffy, licensed under the MIT License (MIT).
  *
  * Copyright (c) OreCruncher
  *
@@ -30,8 +30,6 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import net.minecraft.world.ChunkCoordIntPair;
-
 /**
  * Implements a cache of RegionFiles that evicts oldest RegionFile from the
  * cache when it's size is exceeded.  It improves on the Vanilla approach:
@@ -50,30 +48,10 @@ import net.minecraft.world.ChunkCoordIntPair;
  * can hit an reference equivalence match.
  */
 @SuppressWarnings("serial")
-public class RegionFileLRU extends LinkedHashMap<RegionFileLRU.RegionFileKey, RegionFile> {
+public class RegionFileLRU extends LinkedHashMap<RegionFileKey, RegionFile> {
 
 	private static final Logger logger = LogManager.getLogger();
 
-	// Key class for the LRU.  Technically the key is not a ChunkCoordIntPair so from
-	// an OOP design standpoint is a no no.  But, in this case base class does have
-	// useful functionality for the key thus it is used.
-	public static class RegionFileKey extends ChunkCoordIntPair {
-		
-		private final String dir;
-		
-		public RegionFileKey(final String dir, final int regionX, final int regionZ) {
-			super(regionX, regionZ);
-			this.dir = dir;
-		}
-		
-		@Override
-		public boolean equals(final Object anObj) {
-			// Compare the coordinates before the string.  Usually cheaper
-			// to do the primitive compares than the string comparison.
-			return super.equals(anObj) && dir.equals(((RegionFileKey)anObj).dir);
-		}
-	}
-	
 	private final int cacheSize;
 	
 	public RegionFileLRU(final int cacheSize, final float hashtableLoadFactor) {
