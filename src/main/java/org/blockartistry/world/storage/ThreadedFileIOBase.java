@@ -23,7 +23,6 @@
 
 package org.blockartistry.world.storage;
 
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,28 +52,6 @@ import net.minecraft.world.storage.IThreadedFileIO;
 public class ThreadedFileIOBase {
 
     private final static int THREAD_COUNT = 3;
-    private final static int THREAD_PRIORITY = Thread.NORM_PRIORITY;
-
-    /*
-    private static class Factory implements ThreadFactory {
-
-        private final String prefix;
-        private int counter = 0;
-
-        public Factory(final String threadPrefix) {
-            prefix = threadPrefix;
-        }
-
-        @Override
-        public Thread newThread(final Runnable r) {
-            final String name = new StringBuilder().append(prefix).append(" #").append(++counter).toString();
-            final Thread thread = new Thread(r, name);
-            thread.setPriority(THREAD_PRIORITY);
-            thread.setDaemon(true);
-            return thread;
-        }
-    }
-     */
     
     private final static AtomicInteger outstandingTasks = new AtomicInteger();
     private final static LinkedBlockingDeque<Runnable> workQ = new LinkedBlockingDeque<Runnable>();

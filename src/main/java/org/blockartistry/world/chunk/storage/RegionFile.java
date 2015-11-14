@@ -50,15 +50,17 @@ import net.minecraft.server.MinecraftServer;
  * + Cache compression version of a chunk to mitigate impact of repeated
  * chunkExist() calls.
  * 
- * + Pre-read chunk data during chunkExist() in anticipation of the subsequent
- * getChunkDataInputStream().
- * 
- * + Write to the data file control region is via a direct IntBuffer that
- * overlays the file region.
- * 
  * + Extend the data file with multiple empty sectors rather than just what is
  * needed for a given chunk write. This improves the overall time taken to
  * initialize a new region file.
+ * 
+ * + Minimum sectors per chunk stream to give a bit of room for lightweight
+ * chunks to grow without having to reallocate storage from a region file.
+ * 
+ * + Use ReadWriteLock to guard file operations to allow for multiple readers
+ * and a single writer.  Locks are held for the narrowest time possible to
+ * improve concurrency.
+ * 
  */
 public class RegionFile {
 	private static final Logger logger = LogManager.getLogger();
