@@ -42,8 +42,7 @@ import java.io.OutputStream;
  */
 public class ChunkBuffer extends OutputStream {
 
-	private final static int DEFAULT_BUFFER_SIZE = 4096 * 8;
-	private final static int CHUNK_HEADER_SIZE = 5;
+	private final static int DEFAULT_BUFFER_SIZE = RegionFile.SECTOR_SIZE * 8;
 
 	private RegionFile file;
 	private int chunkX;
@@ -61,12 +60,12 @@ public class ChunkBuffer extends OutputStream {
 
 	public void reset() {
 		// Leave space for the header
-		count = CHUNK_HEADER_SIZE;
+		count = RegionFile.CHUNK_STREAM_HEADER_SIZE;
 	}
 
 	public int size() {
 		// The header is silent
-		return count - CHUNK_HEADER_SIZE;
+		return count - RegionFile.CHUNK_STREAM_HEADER_SIZE;
 	}
 
 	private void ensureCapacity(int minCapacity) {
@@ -107,7 +106,7 @@ public class ChunkBuffer extends OutputStream {
 		// passing off. It's BigEndian, and
 		// includes the byte for compression
 		// type - not sure why.
-		final int len = count - CHUNK_HEADER_SIZE + 1;
+		final int len = count - RegionFile.CHUNK_STREAM_HEADER_SIZE + 1;
 		buf[0] = (byte) ((len >>> 24) & 0xFF);
 		buf[1] = (byte) ((len >>> 16) & 0xFF);
 		buf[2] = (byte) ((len >>> 8) & 0xFF);

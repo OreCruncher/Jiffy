@@ -46,7 +46,7 @@ public class RenameMapper extends Remapper {
 		if (methodNameMap == null)
 			return item;
 
-		final boolean printDBG = owner.contains("NBT");
+		final boolean printDBG = owner.contains("ThreadedFileIOBase");
 
 		if (printDBG) {
 			logger.info("============================= YOO HOO ==========================");

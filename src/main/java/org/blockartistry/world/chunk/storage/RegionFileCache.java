@@ -28,9 +28,6 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 
-import cpw.mods.fml.relauncher.FMLLaunchHandler;
-import cpw.mods.fml.relauncher.Side;
-
 /**
  * Replaces Minecraft's RegionFileCache. It improves on Minecraft's
  * implementation in the following ways:
@@ -46,9 +43,7 @@ import cpw.mods.fml.relauncher.Side;
  */
 public class RegionFileCache {
 	
-	private static final int CLIENT_CACHE_SIZE = 32;
-	private static final int SERVER_CACHE_SIZE = 512;
-	private static final int CACHE_SIZE = FMLLaunchHandler.side() == Side.SERVER ? SERVER_CACHE_SIZE : CLIENT_CACHE_SIZE;
+	private static final int CACHE_SIZE = 256;
 	private static final float HASHTABLE_LOAD_FACTOR = 0.75f;
 	
 	private static final RegionFileLRU regionsByFilename = new RegionFileLRU(CACHE_SIZE, HASHTABLE_LOAD_FACTOR);

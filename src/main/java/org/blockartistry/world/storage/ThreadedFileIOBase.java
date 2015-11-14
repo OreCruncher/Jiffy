@@ -1,4 +1,4 @@
-/* This file is part of Restructured, licensed under the MIT License (MIT).
+/* This file is part of Jiffy, licensed under the MIT License (MIT).
  *
  * Copyright (c) OreCruncher
  *
@@ -28,9 +28,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import cpw.mods.fml.relauncher.FMLLaunchHandler;
-import cpw.mods.fml.relauncher.Side;
-
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingDeque;
 import net.minecraft.world.storage.IThreadedFileIO;
@@ -55,73 +52,59 @@ import net.minecraft.world.storage.IThreadedFileIO;
  */
 public class ThreadedFileIOBase {
 
-	private final static int CLIENT_THREAD_COUNT = 3;
-	private final static int SERVER_THREAD_COUNT = 4;
-	private final static int THREAD_COUNT = FMLLaunchHandler.side() == Side.SERVER ? SERVER_THREAD_COUNT : CLIENT_THREAD_COUNT;
-	private final static int THREAD_PRIORITY = Thread.NORM_PRIORITY;
+    private final static int THREAD_COUNT = 3;
+    private final static int THREAD_PRIORITY = Thread.NORM_PRIORITY;
 
-	public static class Factory implements ThreadFactory {
+    /*
+    private static class Factory implements ThreadFactory {
 
-		private String prefix;
-		private int counter = 0;
+        private final String prefix;
+        private int counter = 0;
 
-		public Factory(final String threadPrefix) {
-			prefix = threadPrefix;
-		}
+        public Factory(final String threadPrefix) {
+            prefix = threadPrefix;
+        }
 
-		@Override
-		public Thread newThread(final Runnable r) {
-			final String name = new StringBuilder().append(prefix).append(" #").append(++counter).toString();
-			final Thread thread = new Thread(r, name);
-			thread.setPriority(THREAD_PRIORITY);
-			thread.setDaemon(true);
-			return thread;
-		}
-	}
+        @Override
+        public Thread newThread(final Runnable r) {
+            final String name = new StringBuilder().append(prefix).append(" #").append(++counter).toString();
+            final Thread thread = new Thread(r, name);
+            thread.setPriority(THREAD_PRIORITY);
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
+     */
+    
+    private final static AtomicInteger outstandingTasks = new AtomicInteger();
+    private final static LinkedBlockingDeque<Runnable> workQ = new LinkedBlockingDeque<Runnable>();
+    private final static ExecutorService pool = new ThreadPoolExecutor(THREAD_COUNT, THREAD_COUNT, 0L,
+            TimeUnit.MILLISECONDS, workQ); //, new Factory("File IO"));
 
-	public static class IThreadedFileIORunnableWrapper implements Runnable {
+    public final static ThreadedFileIOBase threadedIOInstance = new ThreadedFileIOBase();
 
-		private final IThreadedFileIO task;
-
-		public IThreadedFileIORunnableWrapper(final IThreadedFileIO task) {
-			this.task = task;
-		}
-
-		@Override
-		public void run() {
-			try {
-				task.writeNextIO();
-			} finally {
-				outstandingTasks.decrementAndGet();
-			}
-		}
-	}
-
-	private final static AtomicInteger outstandingTasks = new AtomicInteger();
-	private final static LinkedBlockingDeque<Runnable> workQ = new LinkedBlockingDeque<Runnable>();
-	private final static ExecutorService pool = new ThreadPoolExecutor(THREAD_COUNT, THREAD_COUNT, 0L,
-			TimeUnit.MILLISECONDS, workQ, new Factory("File IO"));
-
-	public final static ThreadedFileIOBase threadedIOInstance = new ThreadedFileIOBase();
-
-	private ThreadedFileIOBase() {
-	}
+    public static ThreadedFileIOBase getThreadedIOInstance() {
+        return threadedIOInstance;
+    }
+    
+    private ThreadedFileIOBase() {
+    }
 
 	public void queueIO(final IThreadedFileIO task) throws Exception {
-		if (task != null) {
-			outstandingTasks.incrementAndGet();
-			try {
-				pool.submit(new IThreadedFileIORunnableWrapper(task));
-			} catch(final Exception ex) {
-				outstandingTasks.decrementAndGet();
-				throw ex;
-			}
-		}
-	}
-
-	public void waitForFinish() throws InterruptedException {
-		// Wait for the work to drain from the queue
-		while (outstandingTasks.get() != 0)
-			Thread.sleep(10L);
-	}
+        if(task != null) {
+            outstandingTasks.incrementAndGet();
+            try {
+                pool.submit(new IThreadedFileIOWrapper(task, outstandingTasks));
+            } catch(final Exception ex) {
+                outstandingTasks.decrementAndGet();
+                throw ex;
+            }
+        }
+    }
+    
+    public void waitForFinish() throws InterruptedException {
+        // Wait for the work to drain from the queue
+        while (outstandingTasks.get() != 0)
+            Thread.sleep(10L);
+    }
 }

@@ -46,9 +46,7 @@ public class ChunkInputStream extends DataInputStream {
 	// Size limit of the buffer that is kept around. Defaults
 	// to 16 sectors, and may need to be tuned based on modpack
 	// behaviors.
-	private static final int DEFAULT_BUFFER_SIZE = 4096 * 16;
-
-	private static final int CHUNK_HEADER_SIZE = 5;
+	private static final int DEFAULT_BUFFER_SIZE = RegionFile.SECTOR_SIZE * 16;
 
 	private final static ConcurrentLinkedQueue<ChunkInputStream> freeInputStreams = new ConcurrentLinkedQueue<ChunkInputStream>();
 
@@ -81,7 +79,7 @@ public class ChunkInputStream extends DataInputStream {
 		if (inputBuffer == null)
 			inputBuffer = new byte[DEFAULT_BUFFER_SIZE];
 
-		input.attach(inputBuffer, CHUNK_HEADER_SIZE, inputBuffer.length);
+		input.attach(inputBuffer, RegionFile.CHUNK_STREAM_HEADER_SIZE, inputBuffer.length);
 		inflater.reset();
 		inflaterStream = new InflaterInputStream(input, inflater);
 		in = inflaterStream;
