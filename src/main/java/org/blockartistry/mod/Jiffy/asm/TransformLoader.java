@@ -35,8 +35,10 @@ import cpw.mods.fml.relauncher.Side;
 
 import com.google.common.eventbus.EventBus;
 
-@IFMLLoadingPlugin.MCVersion(value = "1.7.10")
+@IFMLLoadingPlugin.MCVersion("1.7.10")
 @IFMLLoadingPlugin.TransformerExclusions({ "org.blockartistry.mod.Jiffy.asm." })
+@IFMLLoadingPlugin.SortingIndex(10001)
+@IFMLLoadingPlugin.Name("Jiffy")
 public class TransformLoader implements IFMLLoadingPlugin {
 
 	public static boolean runtimeDeobEnabled = false;
