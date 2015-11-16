@@ -25,15 +25,12 @@
 package org.blockartistry.mod.Jiffy.asm;
 
 import java.util.Map;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.objectweb.asm.commons.Remapper;
 
 public class RenameMapper extends Remapper {
 
 	private final Map<String, Map<String, String>> methodNameMap;
 
-	private static final Logger logger = LogManager.getLogger();
 	public RenameMapper() {
 		this.methodNameMap = null;
 	}
@@ -46,34 +43,15 @@ public class RenameMapper extends Remapper {
 		if (methodNameMap == null)
 			return item;
 
-		final boolean printDBG = owner.contains("ThreadedFileIOBase");
-
-		if (printDBG) {
-			logger.info("============================= YOO HOO ==========================");
-			logger.info(String.format("owner: %s\n", owner));
-			logger.info(String.format("item: %s\n", item));
-			logger.info(String.format("desc: %s\n", desc));
-			logger.info("=============================   END   ==========================");
-		}
-
 		final int lastSlash = owner.lastIndexOf('/');
 		final String className = owner.substring(lastSlash + 1);
 
-		if (printDBG)
-			logger.info(String.format("CLASSNAME: '%s'", className));
 		final Map<String, String> itemMap = methodNameMap.get(className);
 		if (itemMap == null)
 			return item;
 
 		final String tempName = desc != null ? (item + desc) : item;
-
-		if (printDBG)
-			logger.info(String.format("TEMPNAME: '%s'", tempName));
-
 		final String newName = itemMap.get(tempName);
-		if (printDBG)
-			logger.info(String.format("NEWNAME: '%s'", newName == null ? "NULL" : newName));
-
 		return newName == null ? item : newName;
 	}
 

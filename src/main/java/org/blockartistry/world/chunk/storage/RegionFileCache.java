@@ -26,85 +26,150 @@ package org.blockartistry.world.chunk.storage;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
-import java.io.IOException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
 
 /**
  * Replaces Minecraft's RegionFileCache. It improves on Minecraft's
  * implementation in the following ways:
  * 
- * + The cache is LRU based. When the number of cached RegionFiles exceeds the
- * cache size the oldest access RegionFile is closed and evicted. Minecraft's
- * implementation purges the entire list when the cache size exceeded which in
- * turn forces a reload of RegionFiles.
- * 
- * + Locking of the region cache is more fine grained which in turn will reduce
- * contention between multiple threads.
+ * + Use a loading cache that provides better concurrency support.
  *
+ * + Loading cache will evict oldest entry when it becomes full, or will evict
+ * after a specified time period.
+ * 
  */
 public class RegionFileCache {
-	
-	private static final int CACHE_SIZE = 256;
-	private static final float HASHTABLE_LOAD_FACTOR = 0.75f;
-	
-	private static final RegionFileLRU regionsByFilename = new RegionFileLRU(CACHE_SIZE, HASHTABLE_LOAD_FACTOR);
 
-	public static RegionFile createOrLoadRegionFile(final File saveDir, final int blockX, final int blockZ) {
+	private static final Logger logger = LogManager.getLogger("RegionFileCache");
+
+	private static final int CACHE_SIZE = 256;
+	private static final int EXPIRY_TIME = 5; // Minutes
+
+	/**
+	 * Key object for indexing into the cache.  Keeps components as native
+	 * as possible to speed up comparisons.
+	 */
+	private static final class RegionFileKey {
+
+		public final int chunkX;
+		public final int chunkZ;
+		public final String dir;
+
+		public RegionFileKey(final String dir, final int regionX, final int regionZ) {
+			this.chunkX = regionX;
+			this.chunkZ = regionZ;
+			this.dir = dir;
+		}
+
+		@Override
+		public int hashCode() {
+			final int i = 1664525 * this.chunkX + 1013904223;
+			final int j = 1664525 * (this.chunkZ ^ -559038737) + 1013904223;
+			return i ^ j;
+		}
+
+		@Override
+		public boolean equals(final Object anObj) {
+			if (this == anObj)
+				return true;
+
+			final RegionFileKey obj = (RegionFileKey) anObj;
+			return chunkX == obj.chunkX && chunkZ == obj.chunkZ && dir.equals(obj.dir);
+		}
+
+		@Override
+		public String toString() {
+			return dir + " [" + chunkX + ", " + chunkZ + "]";
+		}
+	}
+
+	/**
+	 * Routine that is called when there is a cache miss in order to
+	 * initialize the value for the given key.
+	 */
+	private static final class RegionFileLoader extends CacheLoader<RegionFileKey, RegionFile> {
+
+		@Override
+		public RegionFile load(RegionFileKey key) throws Exception {
+			final File file = new File(key.dir, "region");
+			file.mkdirs();
+			final File file1 = new File(file, new StringBuilder(64).append("r.").append(key.chunkX).append('.')
+					.append(key.chunkZ).append(".mca").toString());
+			logger.debug("Loading '" + key.toString() + "'");
+			return new RegionFile(file1);
+		}
+	}
+
+	/**
+	 * Listener that receives notification when a RegionFile is evicted from the
+	 * cache. It ensures that the RegionFile is properly closed out.
+	 */
+	private static final class RegionFileEviction implements RemovalListener<RegionFileKey, RegionFile> {
+		@Override
+		public void onRemoval(RemovalNotification<RegionFileKey, RegionFile> notification) {
+			try {
+				logger.debug("Unloading '" + notification.getKey() + "'");
+				notification.getValue().close();
+			} catch (final Exception ex) {
+				logger.error("Error unloading '" + notification.getKey() + "'", ex);
+			}
+		}
+	}
+
+	private static final LoadingCache<RegionFileKey, RegionFile> regionsByFilename = CacheBuilder.newBuilder()
+			.maximumSize(CACHE_SIZE).expireAfterAccess(EXPIRY_TIME, TimeUnit.MINUTES)
+			.removalListener(new RegionFileEviction()).build(new RegionFileLoader());
+
+	public static RegionFile createOrLoadRegionFile(final File saveDir, final int blockX, final int blockZ)
+			throws ExecutionException {
 		return createOrLoadRegionFile(saveDir.getPath(), blockX, blockZ);
 	}
-	
-	public static RegionFile createOrLoadRegionFile(final String saveDir, final int blockX, final int blockZ) {
 
-		final int X = blockX >> 5;
-		final int Z = blockZ >> 5;
-
-		// Just use the path provided for the save dir.  Since save directories are unique it
-		// serves the purpose.  Goal is to minimize the amount of computation creating the key
-		// and the amount of time it spends evaluating for a match in the underlying cache.
-		final RegionFileKey key = new RegionFileKey(saveDir, X, Z);
-
-		synchronized (regionsByFilename) {
-			RegionFile regionfile = regionsByFilename.get(key);
-			if (regionfile == null) {
-				final File file = new File(saveDir, "region");
-				file.mkdirs();
-				final File file1 = new File(file,
-						new StringBuilder(64).append("r.").append(X).append('.').append(Z).append(".mca").toString());
-				regionfile = new RegionFile(file1);
-				regionsByFilename.put(key, regionfile);
-			}
-			return regionfile;
-		}
+	public static RegionFile createOrLoadRegionFile(final String saveDir, final int blockX, final int blockZ)
+			throws ExecutionException {
+		// Just use the path provided for the save dir. Since save directories
+		// are unique it serves the purpose. Goal is to minimize the amount of
+		// computation creating the key and the amount of time it spends
+		// evaluating for a match in the underlying cache.
+		final RegionFileKey key = new RegionFileKey(saveDir, blockX >> 5, blockZ >> 5);
+		return regionsByFilename.get(key);
 	}
 
 	public static void clearRegionFileReferences() {
-		synchronized (regionsByFilename) {
-
-			for (final RegionFile rf : regionsByFilename.values()) {
-				try {
-					rf.close();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			}
-
-			regionsByFilename.clear();
-		}
+		// Evicts all current entries.  During the process
+		// of eviction the unload callback is made and the
+		// files are closed.
+		regionsByFilename.invalidateAll();
 	}
 
-	public static DataInputStream getChunkInputStream(final File saveDir, final int blockX, final int blockZ) {
+	public static DataInputStream getChunkInputStream(final File saveDir, final int blockX, final int blockZ)
+			throws ExecutionException {
 		return getChunkInputStream(saveDir.getPath(), blockX, blockZ);
 	}
-	
-	public static DataInputStream getChunkInputStream(final String saveDir, final int blockX, final int blockZ) {
+
+	public static DataInputStream getChunkInputStream(final String saveDir, final int blockX, final int blockZ)
+			throws ExecutionException {
 		final RegionFile regionfile = createOrLoadRegionFile(saveDir, blockX, blockZ);
 		return regionfile.getChunkDataInputStream(blockX & 31, blockZ & 31);
 	}
 
-	public static DataOutputStream getChunkOutputStream(final File saveDir, final int blockX, final int blockZ) {
+	public static DataOutputStream getChunkOutputStream(final File saveDir, final int blockX, final int blockZ)
+			throws ExecutionException {
 		return getChunkOutputStream(saveDir.getPath(), blockX, blockZ);
 	}
-	
-	public static DataOutputStream getChunkOutputStream(final String saveDir, final int blockX, final int blockZ) {
+
+	public static DataOutputStream getChunkOutputStream(final String saveDir, final int blockX, final int blockZ)
+			throws ExecutionException {
 		final RegionFile regionfile = createOrLoadRegionFile(saveDir, blockX, blockZ);
 		return regionfile.getChunkDataOutputStream(blockX & 31, blockZ & 31);
 	}

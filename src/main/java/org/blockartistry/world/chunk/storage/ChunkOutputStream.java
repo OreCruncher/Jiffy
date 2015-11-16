@@ -50,7 +50,7 @@ import org.apache.logging.log4j.Logger;
  */
 public class ChunkOutputStream extends DataOutputStream {
 
-	private static final Logger logger = LogManager.getLogger();
+	private static final Logger logger = LogManager.getLogger("ChunkOutputStream");
 
 	private static final AtomicInteger streamNumber = new AtomicInteger();
 	private final static ConcurrentLinkedQueue<ChunkOutputStream> freeOutputStreams = new ConcurrentLinkedQueue<ChunkOutputStream>();
@@ -63,11 +63,17 @@ public class ChunkOutputStream extends DataOutputStream {
 		return buffer.reset(chunkX, chunkZ, region);
 	}
 
-	// Use different compression parameters than Vanilla, which
-	// uses the default settings.
-	private final static int COMPRESSION_LEVEL = 3;
-	private final static int COMPRESSION_STRATEGY = Deflater.DEFAULT_STRATEGY; // Deflater.FILTERED;
-	private final static int COMPRESSION_BUFFER_SIZE = RegionFile.SECTOR_SIZE;
+	// Vanilla uses 5 (default) where this uses 4.  Slightly less
+	// compression but takes less time.
+	private final static int COMPRESSION_LEVEL = 4;
+	
+	// Use default strategy.  FILTERED doesn't buy anything, and Huffman
+	// results in larger stream sizes with more overhead.
+	private final static int COMPRESSION_STRATEGY = Deflater.DEFAULT_STRATEGY;
+	
+	// Set the compression buffer size to match the size of the minimum
+	// chunk stream.
+	private final static int COMPRESSION_BUFFER_SIZE = RegionFile.SECTOR_SIZE * RegionFile.MIN_SECTORS_PER_CHUNK_STREAM;
 
 	@SuppressWarnings("unused")
 	private int myID = streamNumber.incrementAndGet();
@@ -79,38 +85,21 @@ public class ChunkOutputStream extends DataOutputStream {
 	// Time measurement stuff. Intended to work with
 	// concurrent ChunkBuffer writes in the case of
 	// multiple IO write threads.
-	private final static boolean DO_TIMINGS = true;
-	private final static AtomicInteger bytesWritten;
-	private final static AtomicInteger rawBytesWritten;
-	private final static AtomicInteger totalWrites;
-	private final static AtomicInteger outstandingWrites;
-	private final static AtomicInteger accumulatedTime;
-	private final static AtomicInteger sectorsWritten;
-	private static volatile long timeMarker = 0;
-
-	static {
-		if (DO_TIMINGS) {
-			bytesWritten = new AtomicInteger();
-			rawBytesWritten = new AtomicInteger();
-			totalWrites = new AtomicInteger(-10); // Throw away the first 10
-													// writes
-			outstandingWrites = new AtomicInteger();
-			accumulatedTime = new AtomicInteger();
-			sectorsWritten = new AtomicInteger();
-		} else {
-			bytesWritten = null;
-			rawBytesWritten = null;
-			totalWrites = null;
-			outstandingWrites = null;
-			accumulatedTime = null;
-			sectorsWritten = null;
-		}
-	}
+	private static boolean DO_TIMINGS = true;
+	private static Object sync = new Object();
+	private static long bytesWritten;
+	private static long rawBytesWritten;
+	private static long totalWrites = -10;
+	private static long outstandingWrites;
+	private static long accumulatedTime;
+	private static long sectorsWritten;
+	private static long timeMarker;
+	private static long zeroCounts;
 
 	private ChunkOutputStream() {
 		// The protected stream member will be set further down
 		super(null);
-
+		
 		// Setup our buffers and deflater. These guys will be
 		// reused over and over...
 		this.myDeflater = new Deflater(COMPRESSION_LEVEL);
@@ -133,38 +122,37 @@ public class ChunkOutputStream extends DataOutputStream {
 		this.myChunkBuffer.close();
 
 		if (DO_TIMINGS) {
-			int numWrites = totalWrites.incrementAndGet();
-
-			if (numWrites > 0) {
-				final int secs = (myChunkBuffer.size() + RegionFile.CHUNK_STREAM_HEADER_SIZE + RegionFile.SECTOR_SIZE)
-						/ RegionFile.SECTOR_SIZE;
-				final int totalBytes = bytesWritten
-						.addAndGet(myChunkBuffer.size() + RegionFile.CHUNK_STREAM_HEADER_SIZE);
-				final int totalRawBytes = rawBytesWritten.addAndGet(size() + RegionFile.CHUNK_STREAM_HEADER_SIZE);
-				final int sectors = sectorsWritten.addAndGet(secs);
-
-				// If it was the last one doing a write dump out
-				// some stats to the console. This is not 100%
-				// perfect because a thread switch could occur
-				// between the outstandingWrites adjustment
-				// and the accumulatedTime modification, and the
-				// resulting data printed to the console could be
-				// off. However, if it is the last write the
-				// information printed will be correct.
-				if (outstandingWrites.decrementAndGet() == 0) {
-					final int accumTime = accumulatedTime.addAndGet((int) ((System.nanoTime() - timeMarker) / 1000));
-
-					final float avgWriteTime = (float) accumTime / numWrites;
-					final float avgBytes = (float) totalRawBytes / numWrites;
-					final float avgSectors = (float) sectors / numWrites;
-					final float throughput = (float) avgBytes / avgWriteTime;
-					final int ratio = totalRawBytes / totalBytes;
-					logger.info("Avg " + avgWriteTime + ", Avg size " + avgBytes + " (rate " + throughput
-							+ " b/msec, writes " + numWrites + "), compression " + ratio + ":1, Avg sectors "
-							+ avgSectors);
+			synchronized (sync) {
+				long myTotalWrites = ++totalWrites;
+				outstandingWrites--;
+				if(myTotalWrites > 0) {
+					long myTotalBytes = (bytesWritten += myChunkBuffer.size() + RegionFile.CHUNK_STREAM_HEADER_SIZE);
+					long myTotalRawBytes = (rawBytesWritten += size() + RegionFile.CHUNK_STREAM_HEADER_SIZE);
+					long mySectors = (sectorsWritten += (myChunkBuffer.size() + RegionFile.CHUNK_STREAM_HEADER_SIZE + RegionFile.SECTOR_SIZE)
+							/ RegionFile.SECTOR_SIZE);
+					
+					if(outstandingWrites == 0) {
+						long myAccumTime = (accumulatedTime += (System.nanoTime() - timeMarker) / 1000);
+						if(++zeroCounts % 5 == 0) {
+							// adjust to msecs
+							myAccumTime /= 1000;
+							final float avgWriteTime = (float) myAccumTime / myTotalWrites;
+							final float avgBytes = (float) myTotalRawBytes / myTotalWrites;
+							final float avgSectors = (float) mySectors / myTotalWrites;
+							final float throughput = (float) avgBytes / avgWriteTime;
+							final int ratio = (int) (myTotalRawBytes / (myTotalBytes + 1));
+							logger.info("Avg " + avgWriteTime + ", Avg size " + avgBytes + " (rate " + throughput
+									+ " b/msec, writes " + myTotalWrites + "), compression " + ratio + ":1, Avg sectors "
+									+ avgSectors);
+							
+							totalWrites = 0;
+							bytesWritten = 0;
+							rawBytesWritten = 0;
+							sectorsWritten = 0;
+							accumulatedTime = 0;
+						}
+					}
 				}
-			} else {
-				outstandingWrites.decrementAndGet();
 			}
 		}
 
@@ -181,8 +169,10 @@ public class ChunkOutputStream extends DataOutputStream {
 		// 100% perfect because of potential thread
 		// switch but it is good enough.
 		if (DO_TIMINGS)
-			if (outstandingWrites.incrementAndGet() == 1)
-				timeMarker = System.nanoTime();
+			synchronized (sync) {
+				if(++outstandingWrites == 1)
+					timeMarker = System.nanoTime();
+			}
 
 		return this;
 	}

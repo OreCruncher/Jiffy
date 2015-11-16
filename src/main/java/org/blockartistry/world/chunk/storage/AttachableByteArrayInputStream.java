@@ -23,37 +23,26 @@
 
 package org.blockartistry.world.chunk.storage;
 
-public final class RegionFileKey {
+import java.io.ByteArrayInputStream;
 
-	private final int chunkX;
-	private final int chunkZ;
-	private final String dir;
+/**
+ * ByteArrayInputStream that provides a mechanism to attach a
+ * byte buffer.
+ */
+public class AttachableByteArrayInputStream extends ByteArrayInputStream {
 
-	public RegionFileKey(final String dir, final int regionX, final int regionZ) {
-		this.chunkX = regionX;
-		this.chunkZ = regionZ;
-		this.dir = dir;
-	}
+    public AttachableByteArrayInputStream(final byte[] buf) {
+    	super(buf, 0, buf.length);
+    }
 
-	@Override
-	public int hashCode() {
-		final int i = 1664525 * this.chunkX + 1013904223;
-		final int j = 1664525 * (this.chunkZ ^ -559038737) + 1013904223;
-		return i ^ j;
-	}
-
-	@Override
-	public boolean equals(final Object anObj) {
-		if (this == anObj)
-			return true;
-
-		final RegionFileKey obj = (RegionFileKey) anObj;
-		return chunkX == obj.chunkX && chunkZ == obj.chunkZ && dir.equals(obj.dir);
-	}
-
-	@Override
-	public String toString() {
-		return dir + " [" + chunkX + ", " + chunkZ + "]";
-	}
-
+    public AttachableByteArrayInputStream(final byte[] buf, final int offset, final int length) {
+    	super(buf, offset, length);
+    }
+    
+    public void attach(final byte[] buf, final int offset, final int length) {
+        this.buf = buf;
+        this.pos = offset;
+        this.count = Math.min(offset + length, buf.length);
+        this.mark = offset;
+    }
 }

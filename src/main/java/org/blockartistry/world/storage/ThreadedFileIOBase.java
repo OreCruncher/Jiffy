@@ -23,23 +23,23 @@
 
 package org.blockartistry.world.storage;
 
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.Executors;
 import net.minecraft.world.storage.IThreadedFileIO;
 
 /**
  * Replacement ThreadedFileIOBase. It improves on the Vanilla version by:
  * 
- * + Uses a LinkedBlockingDeque for queuing tasks to be executed.
- * 
- * + Capable of having multiple threads servicing the queue.
- * 
  * + Efficient wait on the queue for work. No sleeps or other timers. Immediate
  * dispatch of work when it is queued.
+ * 
+ * + Multiple threads allocated to service. Number based on the number of
+ * processors allocated to the JVM.
  * 
  * + Simple AtomicInteger for tracking work that is being performed.
  *
@@ -51,37 +51,63 @@ import net.minecraft.world.storage.IThreadedFileIO;
  */
 public class ThreadedFileIOBase {
 
-    private final static int THREAD_COUNT = 3;
-    
-    private final static AtomicInteger outstandingTasks = new AtomicInteger();
-    private final static LinkedBlockingDeque<Runnable> workQ = new LinkedBlockingDeque<Runnable>();
-    private final static ExecutorService pool = new ThreadPoolExecutor(THREAD_COUNT, THREAD_COUNT, 0L,
-            TimeUnit.MILLISECONDS, workQ); //, new Factory("File IO"));
+	private static final Logger logger = LogManager.getLogger("ThreadedFileIOBase");
 
-    public final static ThreadedFileIOBase threadedIOInstance = new ThreadedFileIOBase();
+	// Threads number about half the processors available to the JVM
+	private final static int THREAD_COUNT = Math.max(1, Runtime.getRuntime().availableProcessors() / 3);
+	private final static AtomicInteger outstandingTasks = new AtomicInteger();
+	private final static ExecutorService pool;
+	public final static ThreadedFileIOBase threadedIOInstance;
 
-    public static ThreadedFileIOBase getThreadedIOInstance() {
-        return threadedIOInstance;
-    }
-    
-    private ThreadedFileIOBase() {
-    }
+	static {
+
+		pool = Executors.newFixedThreadPool(THREAD_COUNT);
+		threadedIOInstance = new ThreadedFileIOBase();
+		logger.info("Created threadpool with " + THREAD_COUNT + " threads");
+	}
+
+	private static class WrapperIThreadedFileIO implements Runnable {
+		
+		private final IThreadedFileIO task;
+		private final AtomicInteger counter;
+		
+		public WrapperIThreadedFileIO(final IThreadedFileIO task, final AtomicInteger counter) {
+			this.task = task;
+			this.counter = counter;
+		}
+
+		@Override
+		public void run() {
+	        try {
+	            task.writeNextIO();
+	        } finally {
+	            counter.decrementAndGet();
+	        }
+		}
+	}
+
+	public static ThreadedFileIOBase getThreadedIOInstance() {
+		return threadedIOInstance;
+	}
+
+	private ThreadedFileIOBase() {
+	}
 
 	public void queueIO(final IThreadedFileIO task) throws Exception {
-        if(task != null) {
-            outstandingTasks.incrementAndGet();
-            try {
-                pool.submit(new IThreadedFileIOWrapper(task, outstandingTasks));
-            } catch(final Exception ex) {
-                outstandingTasks.decrementAndGet();
-                throw ex;
-            }
-        }
-    }
-    
-    public void waitForFinish() throws InterruptedException {
-        // Wait for the work to drain from the queue
-        while (outstandingTasks.get() != 0)
-            Thread.sleep(10L);
-    }
+		if (task != null) {
+			outstandingTasks.incrementAndGet();
+			try {
+				pool.submit(new WrapperIThreadedFileIO(task, outstandingTasks));
+			} catch (final Exception ex) {
+				outstandingTasks.decrementAndGet();
+				throw ex;
+			}
+		}
+	}
+
+	public void waitForFinish() throws InterruptedException {
+		// Wait for the work to drain from the queue
+		while (outstandingTasks.get() != 0)
+			Thread.sleep(10L);
+	}
 }

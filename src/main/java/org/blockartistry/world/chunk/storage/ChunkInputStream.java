@@ -36,7 +36,7 @@ import java.util.zip.InflaterInputStream;
  * + Object pooling so the stream instances can be reused.  Helps reduce
  * GC pressures for IO as well as speed things up a tad for processing.
  * 
- * + Maintain buffers between reads if possible.  Reduces probably
+ * + Maintain buffers between reads if possible.  Reduces probability
  * of buffer allocation over time.
  * 
  * + Share byte buffer with RegionFile for efficiency.
@@ -44,18 +44,18 @@ import java.util.zip.InflaterInputStream;
 public class ChunkInputStream extends DataInputStream {
 
 	// Size limit of the buffer that is kept around. Defaults
-	// to 16 sectors, and may need to be tuned based on modpack
-	// behaviors.
-	private static final int DEFAULT_BUFFER_SIZE = RegionFile.SECTOR_SIZE * 16;
+	// to 8 sectors, same as the output stream.
+	private static final int DEFAULT_BUFFER_SIZE = RegionFile.SECTOR_SIZE * 8;
+	private final static int COMPRESSION_BUFFER_SIZE = RegionFile.SECTOR_SIZE * RegionFile.MIN_SECTORS_PER_CHUNK_STREAM;
 
 	private final static ConcurrentLinkedQueue<ChunkInputStream> freeInputStreams = new ConcurrentLinkedQueue<ChunkInputStream>();
 
-	public static ChunkInputStream getStream() {
+	static ChunkInputStream getStream() {
 		final ChunkInputStream buffer = freeInputStreams.poll();
 		return buffer != null ? buffer : new ChunkInputStream();
 	}
 
-	public static void returnStream(final ChunkInputStream stream) throws IOException {
+	static void returnStream(final ChunkInputStream stream) throws IOException {
 		// Ensure the stream is closed.  It will
 		// be placed on the free list.
 		if (stream != null)
@@ -64,68 +64,43 @@ public class ChunkInputStream extends DataInputStream {
 
 	private byte[] inputBuffer;
 	private Inflater inflater;
-	private ByteArrayInputStreamNonAsync input;
+	private AttachableByteArrayInputStream input;
 	private InflaterInputStream inflaterStream;
 
 	public ChunkInputStream() {
 		super(null);
-
-		inputBuffer = new byte[DEFAULT_BUFFER_SIZE];
-		input = new ByteArrayInputStreamNonAsync();
-		inflater = new Inflater();
+		this.inputBuffer = new byte[DEFAULT_BUFFER_SIZE];
+		this.input = new AttachableByteArrayInputStream(this.inputBuffer);
+		this.inflater = new Inflater();
+		this.inflaterStream = new InflaterInputStream(this.input, this.inflater, COMPRESSION_BUFFER_SIZE);
+		this.in = this.inflaterStream;
 	}
 
-	public ChunkInputStream bake() {
-		if (inputBuffer == null)
-			inputBuffer = new byte[DEFAULT_BUFFER_SIZE];
-
-		input.attach(inputBuffer, RegionFile.CHUNK_STREAM_HEADER_SIZE, inputBuffer.length);
-		inflater.reset();
-		inflaterStream = new InflaterInputStream(input, inflater);
-		in = inflaterStream;
+	ChunkInputStream bake() {
+		this.input.attach(this.inputBuffer, RegionFile.CHUNK_STREAM_HEADER_SIZE, this.inputBuffer.length);
+		this.inflater.reset();
 		return this;
-	}
-
-	public byte[] getBuffer() {
-		return inputBuffer;
 	}
 
 	/**
 	 * Get's the buffer associated with the stream and ensures it is of
 	 * an appropriate size.  The length of the buffer returned can be
-	 * greater than requested.
+	 * greater than requested.  Does not copy the current contents over -
+	 * it is assumed the reason for getting the buffer is for the
+	 * purpose of reading in compressed data.
 	 * 
 	 * @param desiredSize
 	 * @return
 	 */
-	public byte[] getBuffer(final int desiredSize) {
-		if (inputBuffer == null || desiredSize > inputBuffer.length)
-			inputBuffer = new byte[Math.max(desiredSize, DEFAULT_BUFFER_SIZE)];
+	byte[] getBuffer(final int desiredSize) {
+		if (desiredSize > this.inputBuffer.length)
+			this.inputBuffer = new byte[Math.max(desiredSize, DEFAULT_BUFFER_SIZE)];
 
-		return inputBuffer;
-	}
-
-	/**
-	 * Attaches the buffer to this stream. The stream takes ownership.
-	 * 
-	 * @param buffer
-	 * @return
-	 */
-	public byte[] setBuffer(final byte[] buffer) {
-		inputBuffer = buffer;
-		return buffer;
+		return this.inputBuffer;
 	}
 
 	@Override
 	public void close() throws IOException {
-		// Close out the underlying stream and queue
-		// for reuse.
-		if (in != null) {
-			in.close();
-			in = null;
-			inflaterStream = null;
-		}
-
 		// To the free list!
 		freeInputStreams.add(this);
 	}

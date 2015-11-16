@@ -42,7 +42,7 @@ import org.apache.logging.log4j.Logger;
 
 public class Transformer implements IClassTransformer {
 
-	private static final Logger logger = LogManager.getLogger();
+	private static final Logger logger = LogManager.getLogger("Jiffy Transform");
 
 	private static Map<String, String> targets = new HashMap<String, String>();
 	private static Map<String, Map<String, String>> obsRemap = new HashMap<String, Map<String, String>>();
@@ -50,22 +50,28 @@ public class Transformer implements IClassTransformer {
 	static {
 
 		targets.put("net.minecraft.world.chunk.storage.RegionFileCache", "world.chunk.storage.RegionFileCache");
+		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileLoader", "world.chunk.storage.RegionFileCache$RegionFileLoader");
+		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileEviction", "world.chunk.storage.RegionFileCache$RegionFileEviction");
+		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileKey", "world.chunk.storage.RegionFileCache$RegionFileKey");
+
 		targets.put("net.minecraft.world.chunk.storage.RegionFile", "world.chunk.storage.RegionFile");
+
 		targets.put("net.minecraft.world.chunk.storage.ChunkBuffer", "world.chunk.storage.ChunkBuffer");
-		targets.put("net.minecraft.world.chunk.storage.RegionFileLRU", "world.chunk.storage.RegionFileLRU");
-		targets.put("net.minecraft.world.chunk.storage.RegionFileKey", "world.chunk.storage.RegionFileKey");
 		targets.put("net.minecraft.world.chunk.storage.ChunkOutputStream", "world.chunk.storage.ChunkOutputStream");
 		targets.put("net.minecraft.world.chunk.storage.ChunkInputStream", "world.chunk.storage.ChunkInputStream");
 		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader", "world.chunk.storage.AnvilChunkLoader");
-		targets.put("net.minecraft.world.chunk.storage.ByteArrayInputStreamNonAsync",
-				"world.chunk.storage.ByteArrayInputStreamNonAsync");
+		targets.put("net.minecraft.world.chunk.storage.AttachableByteArrayInputStream",
+				"world.chunk.storage.AttachableByteArrayInputStream");
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase", "world.storage.ThreadedFileIOBase");
-		targets.put("net.minecraft.world.storage.IThreadedFileIOWrapper", "world.storage.IThreadedFileIOWrapper");
-		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$Factory", "world.storage.ThreadedFileIOBase$Factory");
+		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
 
 		targets.put("aqj", "world.chunk.storage.RegionFileCache");
+		targets.put("aqj$RegionFileLoader", "world.chunk.storage.RegionFileCache$RegionFileLoader");
+		targets.put("aqj$RegionFileEviction", "world.chunk.storage.RegionFileCache$RegionFileEviction");
+		targets.put("aqj$RegionFileKey", "world.chunk.storage.RegionFileCache$RegionFileKey");
 		targets.put("aqh", "world.chunk.storage.RegionFile");
 		targets.put("azr", "world.storage.ThreadedFileIOBase");
+		targets.put("azr$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
 		targets.put("aqk", "world.chunk.storage.AnvilChunkLoader");
 
 		// Obsfucation mapping - yay obsfucation!

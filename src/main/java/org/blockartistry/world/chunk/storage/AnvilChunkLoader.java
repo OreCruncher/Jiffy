@@ -31,6 +31,8 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+
 import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
@@ -83,7 +85,7 @@ import org.blockartistry.world.storage.ThreadedFileIOBase;
  */
 public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 
-	private static final Logger logger = LogManager.getLogger();
+	private static final Logger logger = LogManager.getLogger("AnvilChunkLoader");
 	public final File chunkSaveLocation;
 
 	// Interned version of the save location. This will be exploited by
@@ -98,7 +100,7 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		this.saveDir = saveLocation.getPath().intern();
 	}
 
-	public boolean chunkExists(final World world, final int chunkX, final int chunkZ) {
+	public boolean chunkExists(final World world, final int chunkX, final int chunkZ) throws ExecutionException {
 
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
 		synchronized (pendingIO) {
@@ -110,7 +112,12 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	}
 
 	public Chunk loadChunk(final World world, final int chunkX, final int chunkZ) throws IOException {
-		final Object[] data = loadChunk__Async(world, chunkX, chunkZ);
+		Object[] data = null;
+		try {
+			data = loadChunk__Async(world, chunkX, chunkZ);
+		} catch (ExecutionException e) {
+			e.printStackTrace();
+		}
 		if (data != null) {
 			final Chunk chunk = (Chunk) data[0];
 			final NBTTagCompound nbt = (NBTTagCompound) data[1];
@@ -120,7 +127,7 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		return null;
 	}
 
-	public Object[] loadChunk__Async(final World world, final int chunkX, final int chunkZ) throws IOException {
+	public Object[] loadChunk__Async(final World world, final int chunkX, final int chunkZ) throws IOException, ExecutionException {
 
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
 		NBTTagCompound nbt = null;
@@ -236,7 +243,7 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		return true;
 	}
 
-	private void writeChunkNBTTags(final ChunkCoordIntPair coords, final NBTTagCompound nbt) throws IOException {
+	private void writeChunkNBTTags(final ChunkCoordIntPair coords, final NBTTagCompound nbt) throws Exception {
 		final DataOutputStream stream = RegionFileCache.getChunkOutputStream(saveDir, coords.chunkXPos,
 				coords.chunkZPos);
 		CompressedStreamTools.write(nbt, stream);

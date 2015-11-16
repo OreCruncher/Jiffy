@@ -54,73 +54,48 @@ public class ChunkBuffer extends OutputStream {
 		this.file = file;
 		this.chunkX = x;
 		this.chunkZ = z;
-
 		this.buf = new byte[DEFAULT_BUFFER_SIZE];
+		this.count = RegionFile.CHUNK_STREAM_HEADER_SIZE;
 	}
 
 	public void reset() {
 		// Leave space for the header
-		count = RegionFile.CHUNK_STREAM_HEADER_SIZE;
+		this.count = RegionFile.CHUNK_STREAM_HEADER_SIZE;
 	}
 
 	public int size() {
 		// The header is silent
-		return count - RegionFile.CHUNK_STREAM_HEADER_SIZE;
+		return this.count - RegionFile.CHUNK_STREAM_HEADER_SIZE;
 	}
 
-	private void ensureCapacity(int minCapacity) {
-		// overflow-conscious code
-		if (minCapacity - buf.length > 0)
-			grow(minCapacity);
-	}
-
-	private void grow(int minCapacity) {
-		// overflow-conscious code
-		final int oldCapacity = buf.length;
-		int newCapacity = oldCapacity << 1;
-		if (newCapacity - minCapacity < 0)
-			newCapacity = minCapacity;
-		final byte[] newBuff = new byte[newCapacity];
-		System.arraycopy(buf, 0, newBuff, 0, oldCapacity);
-		buf = newBuff;
-	}
-
-	public void write(int b) {
-		ensureCapacity(count + 1);
-		buf[count] = (byte) b;
-		count += 1;
-	}
-
-	public void write(byte b[], int off, int len) {
-		if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) - b.length > 0)) {
-			throw new IndexOutOfBoundsException();
+	private void ensureCapacity(final int minCapacity) {
+		if (minCapacity - this.buf.length > 0) {
+			final byte[] newBuffer = new byte[this.buf.length << 1];
+			System.arraycopy(this.buf, 0, newBuffer, 0, this.count);
+			this.buf = newBuffer;
 		}
-		ensureCapacity(count + len);
-		System.arraycopy(b, off, buf, count, len);
-		count += len;
+	}
+
+	public void write(final int b) {
+		ensureCapacity(this.count + 1);
+		this.buf[this.count++] = (byte) b;
+	}
+
+	public void write(final byte[] b, final int off, final int len) {
+		ensureCapacity(this.count + len);
+		System.arraycopy(b, off, this.buf, this.count, len);
+		this.count += len;
 	}
 
 	public void close() throws IOException {
-
-		// Fill out the header before
-		// passing off. It's BigEndian, and
-		// includes the byte for compression
-		// type - not sure why.
-		final int len = count - RegionFile.CHUNK_STREAM_HEADER_SIZE + 1;
-		buf[0] = (byte) ((len >>> 24) & 0xFF);
-		buf[1] = (byte) ((len >>> 16) & 0xFF);
-		buf[2] = (byte) ((len >>> 8) & 0xFF);
-		buf[3] = (byte) ((len >>> 0) & 0xFF);
-
-		// Set our stream version - currently
-		// Inflate/Deflate.
-		buf[4] = 2; // STREAM_VERSION_FLATION
-
-		// Do the write. This is a blocking call if other
-		// ChunkBuffers are writing to the *same* region
-		// file at the same time.
-		file.write(chunkX, chunkZ, buf, count);
-		file = null;
+		final int len = this.count - RegionFile.CHUNK_STREAM_HEADER_SIZE + 1;
+		this.buf[0] = (byte) ((len >>> 24) & 0xFF);
+		this.buf[1] = (byte) ((len >>> 16) & 0xFF);
+		this.buf[2] = (byte) ((len >>> 8) & 0xFF);
+		this.buf[3] = (byte) ((len >>> 0) & 0xFF);
+		this.buf[4] = 2; // STREAM_VERSION_FLATION
+		this.file.write(this.chunkX, this.chunkZ, this.buf, this.count);
+		this.file = null;
 	}
 
 	public ChunkBuffer reset(final int chunkX, final int chunkZ, final RegionFile file) {
