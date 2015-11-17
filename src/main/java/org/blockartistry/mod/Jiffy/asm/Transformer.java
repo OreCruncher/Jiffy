@@ -110,6 +110,7 @@ public class Transformer implements IClassTransformer {
 		map.put("chunkSaveLocation", "field_75825_d");
 		obsRemap.put("AnvilChunkLoader", map);
 		
+		/*
 		/////////////////
 		//
 		// NBT Classes
@@ -117,14 +118,10 @@ public class Transformer implements IClassTransformer {
 		/////////////////
 		
 		targets.put("net.minecraft.nbt.NBTHelper", "nbt.NBTHelper");
-		targets.put("net.minecraft.nbt.NBTTagByteArray", "nbt.NBTTagByteArray");
 		targets.put("net.minecraft.nbt.NBTTagCompound", "nbt.NBTTagCompound");
-		targets.put("net.minecraft.nbt.NBTTagIntArray", "nbt.NBTTagIntArray");
 		targets.put("net.minecraft.nbt.NBTTagList", "nbt.NBTTagList");
 		
-		targets.put("df", "nbt.NBTTagByteArray");
 		targets.put("dh", "nbt.NBTTagCompound");
-		targets.put("dn", "nbt.NBTTagIntArray");
 		targets.put("dq", "nbt.NBTTagList");
 		
 		// NBTTagCompound
@@ -161,6 +158,7 @@ public class Transformer implements IClassTransformer {
 		map.put("setShort(Ljava/lang/String;S)V", "func_74777_a");
 		map.put("copy()net/minecraft/nbt/NBTBase;", "func_74737_b");
 		map.put("getId()B", "func_74732_a");
+		map.put("write(Ljava/io/DataOutput;)V", "func_74734_a");
 		obsRemap.put("NBTTagCompound", map);
 		obsRemap.put("dh", map);
 
@@ -177,19 +175,7 @@ public class Transformer implements IClassTransformer {
 		obsRemap.put("NBTTagList", map);
 		obsRemap.put("dq", map);
 		
-		// NBTTagByteArray
-		map = new HashMap<String, String>();
-		map.put("copy()Lnet/minecraft/nbt/NBTBase;", "func_74737_b");
-		map.put("getId()B", "func_74732_a");
-		obsRemap.put("NBTTagByteArray", map);
-		obsRemap.put("df", map);
-		
-		// NBTTagIntArray
-		map = new HashMap<String, String>();
-		map.put("copy()net/minecraft/nbt/NBTBase;", "func_74737_b");
-		map.put("getId()B", "func_74732_a");
-		obsRemap.put("NBTTagIntArray", map);
-		obsRemap.put("dn", map);
+		*/
 	}
 
 	private byte[] getClassBytes(final String clazz) {
@@ -223,7 +209,7 @@ public class Transformer implements IClassTransformer {
 		if (src != null) {
 			final byte[] newBytes = getClassBytes(src);
 			if (newBytes != null) {
-				logger.info("Transforming '" + name + "' to '" + src + "'");
+				logger.info("Loading '" + name + "' from '" + src + "'");
 				final ClassReader reader = new ClassReader(newBytes);
 				final ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
 				final RenameMapper mapper = new RenameMapper(TransformLoader.runtimeDeobEnabled ? obsRemap : null);
@@ -231,7 +217,7 @@ public class Transformer implements IClassTransformer {
 				reader.accept(adapter, ClassReader.EXPAND_FRAMES);
 				final byte[] result = writer.toByteArray();
 				if (verifyClassBytes(result)) {
-					logger.info("Transform success '" + name + "'");
+					logger.info("Load success '" + name + "'!");
 					return result;
 				}
 			} else {

@@ -36,7 +36,8 @@ import cpw.mods.fml.relauncher.Side;
 import com.google.common.eventbus.EventBus;
 
 @IFMLLoadingPlugin.MCVersion("1.7.10")
-@IFMLLoadingPlugin.TransformerExclusions({ "org.blockartistry.mod.Jiffy.asm." })
+@IFMLLoadingPlugin.TransformerExclusions({ "org.blockartistry.mod.Jiffy.asm.", "org.blockartistry.world.chunk.storage.",
+		"org.blockartistry.world.storage." })
 @IFMLLoadingPlugin.SortingIndex(10001)
 @IFMLLoadingPlugin.Name("Jiffy")
 public class TransformLoader implements IFMLLoadingPlugin {
@@ -73,7 +74,7 @@ public class TransformLoader implements IFMLLoadingPlugin {
 			runtimeDeobEnabled = ((Boolean) v).booleanValue();
 		}
 	}
-	
+
 	public static class JiffyDummyContainer extends DummyModContainer {
 
 		public JiffyDummyContainer() {
@@ -84,7 +85,7 @@ public class TransformLoader implements IFMLLoadingPlugin {
 			md.name = md.description = "Jiffy";
 			md.version = "@VERSION@";
 		}
-		
+
 		@Override
 		public boolean registerBus(final EventBus bus, final LoadController controller) {
 			bus.register(this);
