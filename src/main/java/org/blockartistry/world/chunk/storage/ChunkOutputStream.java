@@ -63,8 +63,8 @@ public class ChunkOutputStream extends DataOutputStream {
 		return buffer.reset(chunkX, chunkZ, region);
 	}
 
-	// Vanilla uses 5 (default) where this uses 4.  Slightly less
-	// compression but takes less time.
+	// Vanilla uses 5 (default) where this uses 4.  Less compression
+	// but takes less time.
 	private final static int COMPRESSION_LEVEL = 4;
 	
 	// Use default strategy.  FILTERED doesn't buy anything, and Huffman
@@ -85,7 +85,7 @@ public class ChunkOutputStream extends DataOutputStream {
 	// Time measurement stuff. Intended to work with
 	// concurrent ChunkBuffer writes in the case of
 	// multiple IO write threads.
-	private static boolean DO_TIMINGS = true;
+	private static boolean DO_TIMINGS = false;
 	private static Object sync = new Object();
 	private static long bytesWritten;
 	private static long rawBytesWritten;

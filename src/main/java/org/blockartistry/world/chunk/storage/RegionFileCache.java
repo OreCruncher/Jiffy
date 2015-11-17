@@ -53,7 +53,11 @@ public class RegionFileCache {
 	private static final Logger logger = LogManager.getLogger("RegionFileCache");
 
 	private static final int CACHE_SIZE = 256;
-	private static final int EXPIRY_TIME = 5; // Minutes
+	
+	// In minutes.  Looks like Minecraft/Forge does a big flush every
+	// 4 minutes or so when standing there.  The exipry time is a bit
+	// longer than that in case of tardiness for some reason.
+	private static final int EXPIRY_TIME = 6;
 
 	/**
 	 * Key object for indexing into the cache.  Keeps components as native

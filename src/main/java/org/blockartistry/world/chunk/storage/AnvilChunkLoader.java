@@ -28,9 +28,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import net.minecraft.block.Block;
@@ -48,13 +46,18 @@ import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.NibbleArray;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraft.world.chunk.storage.IChunkLoader;
-import net.minecraft.world.storage.IThreadedFileIO;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.world.ChunkDataEvent;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.blockartistry.world.storage.ThreadedFileIOBase;
+import org.blockartistry.world.storage.IThreadedFileIO;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
 
 /**
  * Implementation of a new AnvilChunkLoader. The improvements that have been
@@ -93,7 +96,27 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	// dynamically change while running.
 	protected final String saveDir;
 
-	private final Map<ChunkCoordIntPair, NBTTagCompound> pendingIO = new HashMap<ChunkCoordIntPair, NBTTagCompound>();
+	private final class ChunkFlush implements RemovalListener<ChunkCoordIntPair, NBTTagCompound> {
+		
+		private final AnvilChunkLoader loader;
+		
+		public ChunkFlush(final AnvilChunkLoader loader) {
+			this.loader = loader;
+		}
+		
+		@Override
+		public void onRemoval(RemovalNotification<ChunkCoordIntPair, NBTTagCompound> notification) {
+			try {
+				loader.writeChunkNBTTags(notification.getKey(), notification.getValue());
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+
+	private final Cache<ChunkCoordIntPair, NBTTagCompound> pendingIO = CacheBuilder.newBuilder()
+						.removalListener(new ChunkFlush(this)).build();
 
 	public AnvilChunkLoader(final File saveLocation) {
 		this.chunkSaveLocation = saveLocation;
@@ -103,11 +126,8 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	public boolean chunkExists(final World world, final int chunkX, final int chunkZ) throws ExecutionException {
 
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
-		synchronized (pendingIO) {
-			if (pendingIO.containsKey(coords))
-				return true;
-		}
-
+		if (pendingIO.getIfPresent(coords) != null)
+			return true;
 		return RegionFileCache.createOrLoadRegionFile(saveDir, chunkX, chunkZ).chunkExists(chunkX & 31, chunkZ & 31);
 	}
 
@@ -130,11 +150,8 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	public Object[] loadChunk__Async(final World world, final int chunkX, final int chunkZ) throws IOException, ExecutionException {
 
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
-		NBTTagCompound nbt = null;
 
-		synchronized (pendingIO) {
-			nbt = pendingIO.get(coords);
-		}
+		NBTTagCompound nbt = pendingIO.getIfPresent(coords);
 
 		if (nbt == null) {
 			final DataInputStream stream = RegionFileCache.getChunkInputStream(saveDir, chunkX, chunkZ);
@@ -209,38 +226,22 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 			// Put the write onto the pending list and queue
 			// up an IO request.
 			final ChunkCoordIntPair coords = chunk.getChunkCoordIntPair();
-			synchronized (pendingIO) {
-				pendingIO.put(coords, nbt1);
-			}
+			pendingIO.put(coords, nbt1);
 
-			ThreadedFileIOBase.threadedIOInstance.queueIO(this);
+			ThreadedFileIOBase.threadedIOInstance.queueIO(this, coords);
 
 		} catch (final Exception exception) {
 			exception.printStackTrace();
 		}
 	}
 
+	public boolean writeNextIO(final ChunkCoordIntPair chunkCoords) {
+		pendingIO.invalidate(chunkCoords);
+		return false;
+	}
+	
 	public boolean writeNextIO() {
-		ChunkCoordIntPair coords = null;
-		NBTTagCompound nbt = null;
-
-		synchronized (pendingIO) {
-			if (pendingIO.isEmpty())
-				return false;
-
-			// Peel the first entry from the map
-			coords = pendingIO.keySet().iterator().next();
-			nbt = pendingIO.remove(coords);
-		}
-
-		if (nbt != null) {
-			try {
-				writeChunkNBTTags(coords, nbt);
-			} catch (final Exception exception) {
-				exception.printStackTrace();
-			}
-		}
-		return true;
+		return false;
 	}
 
 	private void writeChunkNBTTags(final ChunkCoordIntPair coords, final NBTTagCompound nbt) throws Exception {

@@ -30,7 +30,8 @@ import org.apache.logging.log4j.Logger;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import net.minecraft.world.storage.IThreadedFileIO;
+
+import net.minecraft.world.ChunkCoordIntPair;
 
 /**
  * Replacement ThreadedFileIOBase. It improves on the Vanilla version by:
@@ -85,6 +86,28 @@ public class ThreadedFileIOBase {
 	        }
 		}
 	}
+	
+	private static class WrapperChunkCoordIO implements Runnable {
+		
+		private final IThreadedFileIO task;
+		private final ChunkCoordIntPair coords;
+		private final AtomicInteger counter;
+		
+		public WrapperChunkCoordIO(final IThreadedFileIO task, final ChunkCoordIntPair coords, final AtomicInteger counter) {
+			this.task = task;
+			this.coords = coords;
+			this.counter = counter;
+		}
+
+		@Override
+		public void run() {
+			try {
+				this.task.writeNextIO(this.coords);
+			} finally {
+				counter.decrementAndGet();
+			}
+		}
+	}
 
 	public static ThreadedFileIOBase getThreadedIOInstance() {
 		return threadedIOInstance;
@@ -98,6 +121,18 @@ public class ThreadedFileIOBase {
 			outstandingTasks.incrementAndGet();
 			try {
 				pool.submit(new WrapperIThreadedFileIO(task, outstandingTasks));
+			} catch (final Exception ex) {
+				outstandingTasks.decrementAndGet();
+				throw ex;
+			}
+		}
+	}
+	
+	public void queueIO(final IThreadedFileIO task, final ChunkCoordIntPair chunkCoords) throws Exception {
+		if(chunkCoords != null) {
+			outstandingTasks.incrementAndGet();
+			try {
+				pool.submit(new WrapperChunkCoordIO(task, chunkCoords, outstandingTasks));
 			} catch (final Exception ex) {
 				outstandingTasks.decrementAndGet();
 				throw ex;
