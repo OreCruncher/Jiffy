@@ -104,7 +104,7 @@ def parseConfig(File config) {
 jar {
 	manifest 
 	{
-        attributes("FMLCorePlugin": "org.blockartistry.mod.Jiffy.asm.TransformLoader", 'FMLCorePluginContainsFMLMod': 'false', 'FMLAT': 'jiffy_at.cfg')
+        attributes("FMLCorePlugin": "org.blockartistry.mod.Jiffy.asm.TransformLoader", 'FMLCorePluginContainsFMLMod': 'false')
     }
 }
 
@@ -114,7 +114,7 @@ task deobfJar(type: Jar) {
 
 	manifest 
 	{
-        attributes("FMLCorePlugin": "org.blockartistry.mod.Jiffy.asm.TransformLoader", 'FMLCorePluginContainsFMLMod': 'false', 'FMLAT': 'jiffy_at.cfg')
+        attributes("FMLCorePlugin": "org.blockartistry.mod.Jiffy.asm.TransformLoader", 'FMLCorePluginContainsFMLMod': 'false')
     }
 }
 

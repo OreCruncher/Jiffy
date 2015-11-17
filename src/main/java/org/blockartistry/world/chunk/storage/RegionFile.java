@@ -32,6 +32,8 @@ import java.util.zip.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import scala.actors.threadpool.Arrays;
+
 /**
  * Replacement for Minecraft's RegionFile implementation. This version improves
  * on Minecraft's implementation in the following ways:
@@ -59,7 +61,7 @@ public class RegionFile {
 	// control file. They seem to be updated, but not read. Need
 	// to do more research as to the why's. If they are not
 	// needed it can be turned off.
-	private final static boolean TIMESTAMP_UPDATE = true;
+	private final static boolean TIMESTAMP_UPDATE = false;
 
 	private final static int INT_SIZE = 4;
 	private final static int BYTE_SIZE = 1;
@@ -71,9 +73,9 @@ public class RegionFile {
 	private final static int SECTOR_NUMBER_SHIFT = 8;
 	private final static int REGION_CHUNK_DIMENSION = 32;
 	private final static int CHUNKS_IN_REGION = REGION_CHUNK_DIMENSION * REGION_CHUNK_DIMENSION;
-	private final static int EXTEND_SECTOR_QUANTITY = 256;
+	private final static int EXTEND_SECTOR_QUANTITY = MIN_SECTORS_PER_CHUNK_STREAM * 16;
 	private final static byte[] EMPTY_SECTOR = new byte[SECTOR_SIZE];
-	
+
 	// Information about a given chunk stream
 	private final static int SECTOR_START = 0;
 	private final static int SECTOR_COUNT = 1;
@@ -182,18 +184,17 @@ public class RegionFile {
 
 		final int sectorNumber = info[SECTOR_START];
 		final int numberOfSectors = info[SECTOR_COUNT];
-		if (!isValidFileRegion(sectorNumber, numberOfSectors))
-			return false;
 
 		try {
 
-			byte[] buffer = null;
-			final int dataLength = numberOfSectors * SECTOR_SIZE;
-
+			byte[] buffer;
 			synchronized (this) {
+				if (!isValidFileRegion(sectorNumber, numberOfSectors))
+					return false;
 				buffer = readSectors(sectorNumber, 1, null);
 			}
 
+			final int dataLength = numberOfSectors * SECTOR_SIZE;
 			final int streamLength = getInt(buffer);
 			if (streamLength <= 0 || streamLength > dataLength)
 				return false;
@@ -245,8 +246,12 @@ public class RegionFile {
 				setCompressionVersion(regionX, regionZ, STREAM_VERSION_FLATION);
 				return stream.bake();
 			case STREAM_VERSION_GZIP:
-				final InputStream is = new ByteArrayInputStream(buffer, CHUNK_STREAM_HEADER_SIZE, dataLength);
+				// Older MC version - going to be upgraded next write. Can't use
+				// the ChunkInputStream for this.
+				final InputStream is = new ByteArrayInputStream(Arrays.copyOf(buffer, buffer.length),
+						CHUNK_STREAM_HEADER_SIZE, dataLength);
 				setCompressionVersion(regionX, regionZ, STREAM_VERSION_GZIP);
+				ChunkInputStream.returnStream(stream);
 				return new DataInputStream(new GZIPInputStream(is));
 			default:
 				;
@@ -308,41 +313,34 @@ public class RegionFile {
 		int sectorNumber = info[SECTOR_START];
 		final int numberOfSectors = info[SECTOR_COUNT];
 
-		boolean zeroRegion = false;
-		boolean setMetadata = true;
+		// Only need to worry about setting metadata if the chunk is new
+		// or it changed sizes. Otherwise it will be rewriting the same
+		// sectors so there is no contention.
+		boolean setMetadata = sectorNumber == 0 || numberOfSectors != sectorsRequired;
 
 		try {
 			synchronized (this) {
-
-				// If it hasn't been written before, or it no longer fits
-				// exactly in it's current region, find a better spot.
-				if (sectorNumber == 0 || numberOfSectors != sectorsRequired) {
-					// "Free" up the existing sectors
-					if (sectorNumber != 0) {
-						this.sectorUsed.clear(sectorNumber, sectorNumber + numberOfSectors);
-					}
-
-					sectorNumber = findContiguousSectors(sectorsRequired);
-					zeroRegion = this.sectorsInFile - sectorNumber < sectorsRequired;
-				} else {
-					// It's an exact fit - don't need to update the metadata
-					setMetadata = false;
-				}
-
-				if (zeroRegion)
-					writeEmptySectors(sectorNumber, Math.max(sectorsRequired, EXTEND_SECTOR_QUANTITY));
-
-				writeSectors(sectorNumber, buffer, length);
-
 				if (setMetadata) {
-					setChunkInformation(regionX, regionZ, sectorNumber, sectorsRequired, STREAM_VERSION_FLATION);
+					// "Free" up the existing sectors
+					if (sectorNumber != 0)
+						this.sectorUsed.clear(sectorNumber, sectorNumber + numberOfSectors);
+
+					// Find some free sectors to write on. If we can't find any
+					// need to extend the file.
+					sectorNumber = findContiguousSectors(sectorsRequired);
+					if (this.sectorsInFile - sectorNumber < sectorsRequired)
+						writeEmptySectors(sectorNumber, Math.max(sectorsRequired, EXTEND_SECTOR_QUANTITY));
+
+					// Mark our sectors used and update the mapping
 					this.sectorUsed.set(sectorNumber, sectorNumber + sectorsRequired);
+					setChunkInformation(regionX, regionZ, sectorNumber, sectorsRequired, STREAM_VERSION_FLATION);
 				}
 
+				// Commit the chunk stream
+				writeSectors(sectorNumber, buffer, length);
 				if (TIMESTAMP_UPDATE)
 					setChunkTimestamp(regionX, regionZ, (int) (System.currentTimeMillis() / 1000L));
 			}
-
 		} catch (final IOException e) {
 			e.printStackTrace();
 		}
@@ -418,9 +416,10 @@ public class RegionFile {
 	}
 
 	public void close() throws IOException {
-		//final int[] result = analyzeSectors();
-		//logger.info(String.format("'%s': sectors %d, last sector %d, gaps %d (%d%%)", this.name, result[0], result[1],
-		//		result[2], result[2] * 100 / result[1]));
+		// final int[] result = analyzeSectors();
+		// logger.info(String.format("'%s': sectors %d, last sector %d, gaps %d
+		// (%d%%)", this.name, result[0], result[1],
+		// result[2], result[2] * 100 / result[1]));
 		if (this.dataFile != null) {
 			this.channel = null;
 			this.dataFile.close();
