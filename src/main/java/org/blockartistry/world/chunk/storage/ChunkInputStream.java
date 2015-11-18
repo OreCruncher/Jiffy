@@ -84,6 +84,10 @@ public class ChunkInputStream extends DataInputStream {
 		this.isBaked = true;
 		return this;
 	}
+	
+	void unbake() {
+		this.isBaked = true;
+	}
 
 	public boolean isBaked() {
 		return this.isBaked;

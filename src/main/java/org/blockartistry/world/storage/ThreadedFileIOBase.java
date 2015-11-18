@@ -80,9 +80,9 @@ public class ThreadedFileIOBase {
 		@Override
 		public void run() {
 	        try {
-	            task.writeNextIO();
+	            this.task.writeNextIO();
 	        } finally {
-	            counter.decrementAndGet();
+	            this.counter.decrementAndGet();
 	        }
 		}
 	}
@@ -104,7 +104,7 @@ public class ThreadedFileIOBase {
 			try {
 				this.task.writeNextIO(this.coords);
 			} finally {
-				counter.decrementAndGet();
+				this.counter.decrementAndGet();
 			}
 		}
 	}

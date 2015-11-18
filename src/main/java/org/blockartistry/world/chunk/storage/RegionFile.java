@@ -63,6 +63,19 @@ import com.google.common.cache.RemovalNotification;
  * 
  * + Minimum sectors per chunk stream to give a bit of room for lightweight
  * chunks to grow without having to reallocate storage from a region file.
+ * 
+ * + Use AsynchronousFileChannel for IO rather than RandomAccessFile.  The
+ * file channel allows for concurrent read/writes whereas RandomAccessFile
+ * serializes access and does not provide independent seeking.
+ * 
+ * + Use a byte array to logically lock chunk streams to avoid concurrent
+ * operations on the same chunk stream.  Rare occurrence but it would be
+ * possible and could lead to corruption.
+ * 
+ * + Use a concurrent cache to pre-load chunk streams whenever a chunkExist()
+ * call requires a read to the file on disk.  Minecraft access pattern has a
+ * chunkExist() followed by a read() operation and it is more efficient
+ * to read the stream during the exist call and cache.
  */
 public final class RegionFile {
 
@@ -135,8 +148,9 @@ public final class RegionFile {
 
 	// Pre-read cache
 	/**
-	 * Listener that receives notification when a RegionFile is evicted from the
-	 * cache. It ensures that the RegionFile is properly closed out.
+	 * Listener that receives notification when a ChunkInputStream is evicted from
+	 * the cache.  It can be evicted because of time expiry, or if a read request
+	 * can be satisfied from the cache.
 	 */
 	private final static long EXPIRY_TIME = 10;
 
@@ -176,19 +190,22 @@ public final class RegionFile {
 			this.sectorUsed.set(0); // Offset data
 			this.sectorUsed.set(1); // Timestamp data
 
+			// Read the control sectors out of the file and wrap
+			// up in an IntBuffer for convenience.
 			this.controlSectors = readSectors(0, 2, null);
 			this.controlCache = ByteBuffer.wrap(controlSectors).asIntBuffer();
 
+			// If the region file has stream data in it process the control
+			// cache information and initialize the used sector map.
 			if (!needsInit) {
-				for (int j = 0; j < CHUNKS_IN_REGION * 2; j++) {
+				for (int j = 0; j < CHUNKS_IN_REGION; j++) {
 					final int streamInfo = this.controlCache.get(j);
-					if (streamInfo == 0 || j >= CHUNKS_IN_REGION)
-						continue;
-
-					final int sectorNumber = streamInfo >> SECTOR_NUMBER_SHIFT;
-					final int numberOfSectors = streamInfo & SECTOR_COUNT_MASK;
-					if (sectorNumber + numberOfSectors <= this.sectorsInFile)
-						this.sectorUsed.set(sectorNumber, sectorNumber + numberOfSectors);
+					if (streamInfo != 0) {
+						final int sectorNumber = streamInfo >> SECTOR_NUMBER_SHIFT;
+						final int numberOfSectors = streamInfo & SECTOR_COUNT_MASK;
+						if (sectorNumber + numberOfSectors <= this.sectorsInFile)
+							this.sectorUsed.set(sectorNumber, sectorNumber + numberOfSectors);
+					}
 				}
 			}
 		} catch (final Exception e) {
@@ -251,8 +268,15 @@ public final class RegionFile {
 			// a recognized stream version. Otherwise we don't know
 			// about it.
 			final DataInputStream stream = (ChunkInputStream) getChunkDataInputStream(regionX, regionZ);
-			if (stream instanceof ChunkInputStream)
-				preRead.put(getChunkStreamId(regionX, regionZ), (ChunkInputStream) stream);
+			if (stream instanceof ChunkInputStream) {
+				final ChunkInputStream temp = (ChunkInputStream) stream;
+				
+				// Unbake before sticking it in the cache.  The bake flag
+				// is used by the eviction routine to decide what to do
+				// with the stream.
+				temp.unbake();
+				preRead.put(getChunkStreamId(regionX, regionZ), temp);
+			}
 
 			return stream != null;
 
@@ -273,10 +297,14 @@ public final class RegionFile {
 
 		try {
 
-			// Check the pre-read cache first to see if it is there.
 			final int streamId = getChunkStreamId(regionX, regionZ);
+			
+			// Check the pre-read cache first to see if it is there.
+			// This is possible because the stream could have been
+			// loaded via chunkExists().
 			ChunkInputStream stream = preRead.getIfPresent(streamId);
 			if (stream != null) {
+				// Note that bake has to occur before the invalidate.
 				stream.bake();
 				preRead.invalidate(streamId);
 				return stream;
@@ -411,24 +439,25 @@ public final class RegionFile {
 					// Mark our sectors used and update the mapping
 					this.sectorUsed.set(sectorNumber, sectorNumber + sectorsRequired);
 					setChunkInformation(streamId, sectorNumber, sectorsRequired, STREAM_VERSION_FLATION);
-					setChunkTimestamp(streamId, (int) (System.currentTimeMillis() / 1000L));
 				}
 
 			try {
 				lockChunk(streamId);
 				writeSectors(sectorNumber, buffer, length);
+				setChunkTimestamp(streamId, (int) (System.currentTimeMillis() / 1000L));
 			} finally {
 				unlockChunk(streamId);
 			}
-
-			if(outstandingWrites.decrementAndGet() == 0)
-				flushControl();
-
-		} catch(final IOException ex) {
-			outstandingWrites.decrementAndGet();
-			ex.printStackTrace();
+			
 		} catch (final Exception ex) {
 			ex.printStackTrace();
+		} finally {
+			if(outstandingWrites.decrementAndGet() == 0)
+				try {
+					flushControl();
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 		}
 	}
 
@@ -485,8 +514,9 @@ public final class RegionFile {
 	}
 
 	private void setChunkTimestamp(final int streamId, final int value) throws IOException {
-		if (value != this.controlCache.get(streamId + CHUNKS_IN_REGION)) {
-			this.controlCache.put(streamId, value);
+		final int idx = streamId + CHUNKS_IN_REGION;
+		if (value != this.controlCache.get(idx)) {
+			this.controlCache.put(idx, value);
 			this.dirtyControl = true;
 		}
 	}

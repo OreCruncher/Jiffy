@@ -24,29 +24,15 @@
 
 package org.blockartistry.mod.Jiffy.asm;
 
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
-
 import org.objectweb.asm.commons.Remapper;
 
 public class RenameMapper extends Remapper {
 
 	private final Map<String, Map<String, String>> methodNameMap;
-	private final Map<String, String> classPatch;
 
 	public RenameMapper(Map<String, Map<String, String>> methodMap) {
-		this(methodMap, null);
-	}
-	
-	public RenameMapper(Map<String, Map<String, String>> methodMap, Map<String, String> classPatch) {
 		this.methodNameMap = methodMap;
-		
-		this.classPatch = new HashMap<String, String>();
-		if(classPatch != null) {
-			for(final Entry<String, String> e: classPatch.entrySet())
-				this.classPatch.put(e.getKey(), ("org.blockartistry." + e.getValue()).replace('.',  '/'));
-		}
 	}
 
 	protected String resolveItemName(final String owner, final String item, final String desc) {
@@ -92,7 +78,10 @@ public class RenameMapper extends Remapper {
 
 	private String fix(String s) {
 		if (s != null) {
-			s = s.replaceAll("org/blockartistry/", "net/minecraft/");
+			if(s.contains("common/chunkio"))
+				s = s.replaceAll("org/blockartistry/", "net/minecraftforge/");
+			else
+				s = s.replaceAll("org/blockartistry/", "net/minecraft/");
 		}
 		return s;
 	}

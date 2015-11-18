@@ -96,7 +96,7 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	// dynamically change while running.
 	protected final String saveDir;
 
-	private final class ChunkFlush implements RemovalListener<ChunkCoordIntPair, NBTTagCompound> {
+	private static final class ChunkFlush implements RemovalListener<ChunkCoordIntPair, NBTTagCompound> {
 		
 		private final AnvilChunkLoader loader;
 		
@@ -109,7 +109,6 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 			try {
 				loader.writeChunkNBTTags(notification.getKey(), notification.getValue());
 			} catch (Exception e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		}
@@ -236,6 +235,9 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	}
 
 	public boolean writeNextIO(final ChunkCoordIntPair chunkCoords) {
+		// A simple invalidate will cause the eviction routine
+		// to kick in for the entry.  It is what actually does the
+		// write to disk.
 		pendingIO.invalidate(chunkCoords);
 		return false;
 	}
