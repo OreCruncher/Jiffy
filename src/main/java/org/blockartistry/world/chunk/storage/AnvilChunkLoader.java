@@ -56,6 +56,7 @@ import org.blockartistry.world.storage.IThreadedFileIO;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 
@@ -77,14 +78,13 @@ import com.google.common.cache.RemovalNotification;
  * 
  * + Removed the session lock check during chunk save. The check was opening and
  * reading the lock file every time a chunk save came through. Mechanism should
- * be changed to use the file as a semaphore by obtaining an exclusive lock when
+ * be changed to use a file as a semaphore by obtaining an exclusive lock when
  * the world loads and croak at that time if there is contention.
  *
- * Note that this implementation uses a Map rather than ArrayList for tracking
- * the pending writes. At the moment having an entry in the list for save is
- * more important than any other particular FIFO need. In fact the hashCode may
- * provide a degree of randomization when it comes to write and avoid the serial
- * nature of writing chunks since the underlying RegionMap are synchronized.
+ * + This implementation uses a Cache rather than an ArrayList().  This
+ * allows for highly concurrent access between Minecraft and the underlying
+ * IO routines.  The write to disk occurs when an IO thread comes through and
+ * invalidates the cache entry.
  */
 public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 
@@ -107,7 +107,10 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		@Override
 		public void onRemoval(RemovalNotification<ChunkCoordIntPair, NBTTagCompound> notification) {
 			try {
-				loader.writeChunkNBTTags(notification.getKey(), notification.getValue());
+				// Only flush the entry if it was invalidated.  Any entry could be
+				// updated prior to it being written by an IO thread.
+				if(notification.getCause() == RemovalCause.EXPLICIT)
+					loader.writeChunkNBTTags(notification.getKey(), notification.getValue());
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -123,7 +126,6 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	}
 
 	public boolean chunkExists(final World world, final int chunkX, final int chunkZ) throws ExecutionException {
-
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
 		if (pendingIO.getIfPresent(coords) != null)
 			return true;
@@ -147,9 +149,7 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	}
 
 	public Object[] loadChunk__Async(final World world, final int chunkX, final int chunkZ) throws IOException, ExecutionException {
-
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
-
 		NBTTagCompound nbt = pendingIO.getIfPresent(coords);
 
 		if (nbt == null) {
@@ -250,6 +250,7 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	}
 	
 	public boolean writeNextIO() {
+		// Using the coordinate version
 		return false;
 	}
 

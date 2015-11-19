@@ -63,9 +63,9 @@ public class ChunkInputStream extends DataInputStream {
 	}
 
 	private byte[] inputBuffer;
-	private Inflater inflater;
-	private AttachableByteArrayInputStream input;
-	private InflaterInputStream inflaterStream;
+	private final Inflater inflater;
+	private final AttachableByteArrayInputStream input;
+	private final InflaterInputStream inflaterStream;
 
 	public ChunkInputStream() {
 		super(null);

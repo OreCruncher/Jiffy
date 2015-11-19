@@ -44,25 +44,38 @@ import com.google.common.cache.RemovalNotification;
  * 
  * + Use a loading cache that provides better concurrency support.
  *
- * + Loading cache will evict oldest entry when it becomes full, or will evict
- * after a specified time period.
+ * + Policy set to evict entries based on when they were last accessed.
  * 
+ * + Key into the cache is no longer a computed String. Makes use of the fact
+ * that the save directory can be considered immutable, and the coordinates are
+ * primitives.
+ * 
+ * + No cache size limit. The number of entries in the cache will float based on
+ * demand and expiration policy.
  */
 public class RegionFileCache {
 
 	private static final Logger logger = LogManager.getLogger("RegionFileCache");
 
-	private static final int CACHE_SIZE = 256;
-	
-	// In minutes.  Looks like Minecraft/Forge does a big flush every
-	// 4 minutes or so when standing there.  The exipry time is a bit
-	// longer than that in case of tardiness for some reason.
-	private static final int EXPIRY_TIME = 6;
+	// Looks like Minecraft/Forge does a big flush every
+	// 45 seconds or so when standing there. The expiration time is a bit
+	// longer than that in case of tardiness for some reason. Note that
+	// the expiration is based on the time of last access (read or write).
+	private static final int EXPIRATION_TIME = 3;
+	private static final TimeUnit EXPIRATION_UNIT = TimeUnit.MINUTES;
 
-	/**
-	 * Key object for indexing into the cache.  Keeps components as native
-	 * as possible to speed up comparisons.
-	 */
+	// Number of entries to initialize the cache with
+	private static final int INITIAL_CAPACITY = 64;
+	
+	// Higher the concurrency number, the more parallel the cache can be.
+	// Use 8 because ThreadedFileIOBase, ChunkIOExecutor, and the Server
+	// thread total about 8.
+	private static final int CONCURRENCY = 8;
+
+	// Key into the cache. Makes use of the fact that the save directory
+	// for the region file can be considered immutable, and the coordinates
+	// are primitives. Most efficient if the save directory is an interned
+	// string.
 	private static final class RegionFileKey {
 
 		public final int chunkX;
@@ -93,14 +106,13 @@ public class RegionFileCache {
 
 		@Override
 		public String toString() {
-			return dir + " [" + chunkX + ", " + chunkZ + "]";
+			return new StringBuilder().append(dir).append('[').append(chunkX).append(',').append(chunkZ).append(']')
+					.toString();
 		}
 	}
 
-	/**
-	 * Routine that is called when there is a cache miss in order to
-	 * initialize the value for the given key.
-	 */
+	// Used by the cache when an entry is not found when queried. It
+	// will load the RegionFile from disk, or create if needed.
 	private static final class RegionFileLoader extends CacheLoader<RegionFileKey, RegionFile> {
 
 		@Override
@@ -114,10 +126,9 @@ public class RegionFileCache {
 		}
 	}
 
-	/**
-	 * Listener that receives notification when a RegionFile is evicted from the
-	 * cache. It ensures that the RegionFile is properly closed out.
-	 */
+	// Routine used when a RegionFile is evicted from the cache. Current
+	// cause of eviction is expiration. When this occurs the RegionFile
+	// needs to be closed out.
 	private static final class RegionFileEviction implements RemovalListener<RegionFileKey, RegionFile> {
 		@Override
 		public void onRemoval(RemovalNotification<RegionFileKey, RegionFile> notification) {
@@ -131,9 +142,10 @@ public class RegionFileCache {
 	}
 
 	private static final LoadingCache<RegionFileKey, RegionFile> regionsByFilename = CacheBuilder.newBuilder()
-			.maximumSize(CACHE_SIZE).expireAfterAccess(EXPIRY_TIME, TimeUnit.MINUTES)
-			.removalListener(new RegionFileEviction()).build(new RegionFileLoader());
+			.expireAfterAccess(EXPIRATION_TIME, EXPIRATION_UNIT).removalListener(new RegionFileEviction())
+			.initialCapacity(INITIAL_CAPACITY).concurrencyLevel(CONCURRENCY).build(new RegionFileLoader());
 
+	@Deprecated
 	public static RegionFile createOrLoadRegionFile(final File saveDir, final int blockX, final int blockZ)
 			throws ExecutionException {
 		return createOrLoadRegionFile(saveDir.getPath(), blockX, blockZ);
@@ -141,21 +153,17 @@ public class RegionFileCache {
 
 	public static RegionFile createOrLoadRegionFile(final String saveDir, final int blockX, final int blockZ)
 			throws ExecutionException {
-		// Just use the path provided for the save dir. Since save directories
-		// are unique it serves the purpose. Goal is to minimize the amount of
-		// computation creating the key and the amount of time it spends
-		// evaluating for a match in the underlying cache.
-		final RegionFileKey key = new RegionFileKey(saveDir, blockX >> 5, blockZ >> 5);
-		return regionsByFilename.get(key);
+		return regionsByFilename.get(new RegionFileKey(saveDir, blockX >> 5, blockZ >> 5));
 	}
 
 	public static void clearRegionFileReferences() {
-		// Evicts all current entries.  During the process
-		// of eviction the unload callback is made and the
+		// Evicts all current entries. During the process
+		// of eviction the onRemoval() callback is made and the
 		// files are closed.
 		regionsByFilename.invalidateAll();
 	}
 
+	@Deprecated
 	public static DataInputStream getChunkInputStream(final File saveDir, final int blockX, final int blockZ)
 			throws Exception {
 		return getChunkInputStream(saveDir.getPath(), blockX, blockZ);
@@ -167,6 +175,7 @@ public class RegionFileCache {
 		return regionfile.getChunkDataInputStream(blockX & 31, blockZ & 31);
 	}
 
+	@Deprecated
 	public static DataOutputStream getChunkOutputStream(final File saveDir, final int blockX, final int blockZ)
 			throws ExecutionException {
 		return getChunkOutputStream(saveDir.getPath(), blockX, blockZ);

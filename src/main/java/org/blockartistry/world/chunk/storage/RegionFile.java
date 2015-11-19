@@ -87,8 +87,13 @@ public final class RegionFile {
 
 	private static final Logger logger = LogManager.getLogger("RegionFile");
 
-	private static Method cleaner;
-	private static Method clean;
+	// This is a kinda nasty work around for mapped memory hanging around.
+	// In order to get it to close out and free up resources the "cleaner"
+	// has to be invoked on the buffer. The cleaner would normally close
+	// out native resources during finalization, but we don't want to wait
+	// for the GC for that to occur.
+	private static Method cleaner = null;
+	private static Method clean = null;
 
 	static {
 
@@ -109,7 +114,8 @@ public final class RegionFile {
 		}
 	}
 
-	private static void freeMemoryMap(final ByteBuffer buffer) {
+	// Force a free of the underlying resources of the MappedByteBuffer.
+	private static void freeMemoryMap(final MappedByteBuffer buffer) {
 		if (clean != null && buffer != null && buffer.isDirect()) {
 			try {
 				clean.invoke(cleaner.invoke(buffer));
@@ -143,6 +149,7 @@ public final class RegionFile {
 	private final static byte STREAM_VERSION_GZIP = 1;
 	private final static byte STREAM_VERSION_FLATION = 2;
 
+	// Standard options for opening a FileChannel
 	private final static Set<StandardOpenOption> OPEN_OPTIONS = Sets.newHashSet(StandardOpenOption.READ,
 			StandardOpenOption.WRITE, StandardOpenOption.CREATE);
 
@@ -154,10 +161,6 @@ public final class RegionFile {
 	private MappedByteBuffer mapped;
 	private IntBuffer control;
 	private byte[] streamVersion = new byte[CHUNKS_IN_REGION];
-
-	private static int getChunkStreamId(final int regionX, final int regionZ) {
-		return regionX + regionZ * REGION_CHUNK_DIMENSION;
-	}
 
 	// Used to logically lock a chunk while it is being operated on.
 	// It is expected that concurrent calls into RegionFile will be
@@ -217,10 +220,13 @@ public final class RegionFile {
 			this.mapped = this.channel.map(MapMode.READ_WRITE, 0, SECTOR_SIZE * 2);
 			this.control = this.mapped.asIntBuffer();
 
-			this.sectorUsed = new BitSet(Math.max(1024, this.sectorsInFile));
+			// Pre-allocate enough bits to fit either the number of sectors
+			// currently present in the file, or 1024 minimum size chunk
+			// streams.
+			this.sectorUsed = new BitSet(Math.max(CHUNKS_IN_REGION * MIN_SECTORS_PER_CHUNK_STREAM, this.sectorsInFile));
 			this.sectorUsed.set(0, 2); // Control sectors
 
-			// If the region file has stream data in it process the control
+			// If the region file has stream data process the control
 			// cache information and initialize the used sector map.
 			if (!needsInit) {
 				for (int j = 0; j < CHUNKS_IN_REGION; j++) {
@@ -232,9 +238,9 @@ public final class RegionFile {
 							this.sectorUsed.set(sectorNumber, sectorNumber + numberOfSectors);
 						} else {
 							logger.error(
-									String.format("%s: stream control data exceeds file size (streamId: %d, info: %d",
+									String.format("%s: stream control data exceeds file size (streamId: %d, info: %d)",
 											name, j, streamInfo));
-							// this.control.put(j, 0);
+							this.control.put(j, 0);
 						}
 					}
 				}
@@ -363,6 +369,8 @@ public final class RegionFile {
 			// Pass back an appropriate stream for the requester
 			DataInputStream result = null;
 			if (buffer[4] == STREAM_VERSION_FLATION) {
+				// Seems redundant, but Minecraft sometimes does a load
+				// without an exist check.
 				setStreamVersion(streamId, STREAM_VERSION_FLATION);
 				result = stream.bake();
 			} else if (buffer[4] == STREAM_VERSION_GZIP) {
@@ -494,6 +502,10 @@ public final class RegionFile {
 		}
 	}
 
+	private static int getChunkStreamId(final int regionX, final int regionZ) {
+		return regionX + regionZ * REGION_CHUNK_DIMENSION;
+	}
+
 	private int getInt(final byte[] buffer) {
 		return getInt(buffer, 0);
 	}
@@ -545,21 +557,16 @@ public final class RegionFile {
 		this.streamVersion[streamId] = value;
 	}
 
-	@SuppressWarnings("unused")
 	private int[] analyzeSectors() {
-		final int lastUsedSector = this.sectorUsed.previousSetBit(this.sectorUsed.length());
-		int gapSectors = 0;
-		for (int i = 0; i < lastUsedSector; i++)
-			if (!this.sectorUsed.get(i))
-				gapSectors++;
+		final int lastUsedSector = this.sectorUsed.length() - 1;
+		final int gapSectors = lastUsedSector - this.sectorUsed.cardinality() + 1;
 		return new int[] { this.sectorsInFile, lastUsedSector, gapSectors };
 	}
 
 	public void close() throws Exception {
-		// final int[] result = analyzeSectors();
-		// logger.info(String.format("'%s': sectors %d, last sector %d, gaps %d
-		// (%d%%)", this.name, result[0], result[1],
-		// result[2], result[2] * 100 / result[1]));
+		final int[] result = analyzeSectors();
+		logger.debug(String.format("'%s': total sectors %d, last used sector %d, gaps %d (%d%%)", name(), result[0],
+				result[1], result[2], result[2] * 100 / result[1]));
 		if (this.channel != null) {
 			preRead.invalidateAll();
 			this.mapped.force();
@@ -572,6 +579,6 @@ public final class RegionFile {
 
 	@Override
 	public String toString() {
-		return this.name;
+		return name();
 	}
 }

@@ -32,7 +32,6 @@ import java.util.Map;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.commons.RemappingClassAdapter;
 import org.objectweb.asm.util.CheckClassAdapter;
 
 import net.minecraft.launchwrapper.IClassTransformer;
@@ -233,7 +232,7 @@ public class Transformer implements IClassTransformer {
 				final ClassReader reader = new ClassReader(newBytes);
 				final ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
 				final RenameMapper mapper = new RenameMapper(TransformLoader.runtimeDeobEnabled ? obsRemap : null);
-				final RemappingClassAdapter adapter = new RemappingClassAdapter(writer, mapper);
+				final JiffyRemappingClassAdapter adapter = new JiffyRemappingClassAdapter(writer, mapper);
 				reader.accept(adapter, ClassReader.EXPAND_FRAMES);
 				final byte[] result = writer.toByteArray();
 				if (verifyClassBytes(result)) {

@@ -50,12 +50,12 @@ import org.apache.logging.log4j.Logger;
  */
 public class ChunkOutputStream extends DataOutputStream {
 
-	private static final Logger logger = LogManager.getLogger("ChunkOutputStream");
+	private final static Logger logger = LogManager.getLogger("ChunkOutputStream");
 
-	private static final AtomicInteger streamNumber = new AtomicInteger();
+	private final static AtomicInteger streamNumber = new AtomicInteger();
 	private final static ConcurrentLinkedQueue<ChunkOutputStream> freeOutputStreams = new ConcurrentLinkedQueue<ChunkOutputStream>();
 
-	public static ChunkOutputStream getStream(final int chunkX, final int chunkZ, final RegionFile region) {
+	static ChunkOutputStream getStream(final int chunkX, final int chunkZ, final RegionFile region) {
 		ChunkOutputStream buffer = freeOutputStreams.poll();
 		if (buffer == null)
 			buffer = new ChunkOutputStream();
@@ -76,11 +76,10 @@ public class ChunkOutputStream extends DataOutputStream {
 	private final static int COMPRESSION_BUFFER_SIZE = RegionFile.SECTOR_SIZE * RegionFile.MIN_SECTORS_PER_CHUNK_STREAM;
 
 	@SuppressWarnings("unused")
-	private int myID = streamNumber.incrementAndGet();
-
-	private ChunkBuffer myChunkBuffer = new ChunkBuffer(0, 0, null);
-	private Deflater myDeflater = new Deflater(COMPRESSION_LEVEL);
-	private DeflaterOutputStream myDeflaterOutput;
+	private final int myID = streamNumber.incrementAndGet();
+	private final ChunkBuffer myChunkBuffer;
+	private final Deflater myDeflater;
+	private final DeflaterOutputStream myDeflaterOutput;
 
 	// Time measurement stuff. Intended to work with
 	// concurrent ChunkBuffer writes in the case of
