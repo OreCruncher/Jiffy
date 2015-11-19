@@ -73,9 +73,9 @@ public class Transformer implements IClassTransformer {
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperChunkCoordIO", "world.storage.ThreadedFileIOBase$WrapperChunkCoordIO");
 		
 		// Forge classes
-		//targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
-		//targets.put("net.minecraftforge.common.chunkio.ChunkIOProvider", "common.chunkio.ChunkIOProvider");
-		//targets.put("net.minecraftforge.common.chunkio.QueuedChunk", "common.chunkio.QueuedChunk");
+		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
+		targets.put("net.minecraftforge.common.chunkio.ChunkIOProvider", "common.chunkio.ChunkIOProvider");
+		targets.put("net.minecraftforge.common.chunkio.QueuedChunk", "common.chunkio.QueuedChunk");
 
 		// Obsfucated names
 		targets.put("aqj", "world.chunk.storage.RegionFileCache");

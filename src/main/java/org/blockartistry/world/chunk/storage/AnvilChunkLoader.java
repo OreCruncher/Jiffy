@@ -153,7 +153,14 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		NBTTagCompound nbt = pendingIO.getIfPresent(coords);
 
 		if (nbt == null) {
-			final DataInputStream stream = RegionFileCache.getChunkInputStream(saveDir, chunkX, chunkZ);
+			DataInputStream stream = null;
+			
+			try {
+				stream = RegionFileCache.getChunkInputStream(saveDir, chunkX, chunkZ);
+			} catch(final Exception ex) {
+				ex.printStackTrace();
+			}
+			
 			if (stream == null) {
 				return null;
 			}

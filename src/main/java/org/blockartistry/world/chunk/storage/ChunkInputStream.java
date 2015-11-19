@@ -66,7 +66,6 @@ public class ChunkInputStream extends DataInputStream {
 	private Inflater inflater;
 	private AttachableByteArrayInputStream input;
 	private InflaterInputStream inflaterStream;
-	private boolean isBaked;
 
 	public ChunkInputStream() {
 		super(null);
@@ -75,22 +74,12 @@ public class ChunkInputStream extends DataInputStream {
 		this.inflater = new Inflater();
 		this.inflaterStream = new InflaterInputStream(this.input, this.inflater, COMPRESSION_BUFFER_SIZE);
 		this.in = this.inflaterStream;
-		this.isBaked = false;
 	}
 
 	ChunkInputStream bake() {
 		this.input.attach(this.inputBuffer, RegionFile.CHUNK_STREAM_HEADER_SIZE, this.inputBuffer.length);
 		this.inflater.reset();
-		this.isBaked = true;
 		return this;
-	}
-	
-	void unbake() {
-		this.isBaked = true;
-	}
-
-	public boolean isBaked() {
-		return this.isBaked;
 	}
 	
 	/**
@@ -113,7 +102,6 @@ public class ChunkInputStream extends DataInputStream {
 	@Override
 	public void close() throws IOException {
 		// To the free list!
-		this.isBaked = false;
 		freeInputStreams.add(this);
 	}
 }

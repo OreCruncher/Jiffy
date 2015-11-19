@@ -157,12 +157,12 @@ public class RegionFileCache {
 	}
 
 	public static DataInputStream getChunkInputStream(final File saveDir, final int blockX, final int blockZ)
-			throws ExecutionException {
+			throws Exception {
 		return getChunkInputStream(saveDir.getPath(), blockX, blockZ);
 	}
 
 	public static DataInputStream getChunkInputStream(final String saveDir, final int blockX, final int blockZ)
-			throws ExecutionException {
+			throws Exception {
 		final RegionFile regionfile = createOrLoadRegionFile(saveDir, blockX, blockZ);
 		return regionfile.getChunkDataInputStream(blockX & 31, blockZ & 31);
 	}

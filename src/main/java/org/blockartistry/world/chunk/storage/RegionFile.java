@@ -24,16 +24,17 @@
 package org.blockartistry.world.chunk.storage;
 
 import java.io.*;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
-import java.nio.channels.AsynchronousFileChannel;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.*;
 
 import org.apache.logging.log4j.LogManager;
@@ -43,6 +44,7 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
+import com.google.common.collect.Sets;
 
 /**
  * Replacement for Minecraft's RegionFile implementation. This version improves
@@ -64,29 +66,66 @@ import com.google.common.cache.RemovalNotification;
  * + Minimum sectors per chunk stream to give a bit of room for lightweight
  * chunks to grow without having to reallocate storage from a region file.
  * 
- * + Use AsynchronousFileChannel for IO rather than RandomAccessFile.  The
- * file channel allows for concurrent read/writes whereas RandomAccessFile
- * serializes access and does not provide independent seeking.
+ * + Avoid reallocating stream sectors if the chunk stream shrinks a little bit.
+ * Chunk streams have a tendency to vacillate in size because of things like mob
+ * spawns. Keeping the same chunk stream size maximizes write throughput.
  * 
  * + Use a byte array to logically lock chunk streams to avoid concurrent
- * operations on the same chunk stream.  Rare occurrence but it would be
- * possible and could lead to corruption.
+ * operations on the same chunk stream. Rare occurrence but it would be possible
+ * and could lead to corruption.
  * 
  * + Use a concurrent cache to pre-load chunk streams whenever a chunkExist()
- * call requires a read to the file on disk.  Minecraft access pattern has a
- * chunkExist() followed by a read() operation and it is more efficient
- * to read the stream during the exist call and cache.
+ * call requires a read to the file on disk. Minecraft access pattern has a
+ * chunkExist() followed by a read() operation and it is more efficient to read
+ * the stream during the exist call and cache.
+ * 
+ * + Use a file mapped memory for handling the control region of the file. This
+ * permits the best performance of managing/updating the region file control
+ * data.
  */
 public final class RegionFile {
 
 	private static final Logger logger = LogManager.getLogger("RegionFile");
+
+	private static Method cleaner;
+	private static Method clean;
+
+	static {
+
+		try {
+			cleaner = Class.forName("java.nio.DirectByteBuffer").getMethod("cleaner");
+			if (cleaner != null) {
+				cleaner.setAccessible(true);
+				clean = Class.forName("sun.misc.Cleaner").getMethod("clean");
+				if (clean != null)
+					clean.setAccessible(true);
+				else
+					cleaner = null;
+			} else {
+				logger.warn("Can't find cleaner!");
+			}
+		} catch (final Exception ex) {
+			logger.warn("Unable to hook cleaner API for DirectByteBuffer release");
+		}
+	}
+
+	private static void freeMemoryMap(final ByteBuffer buffer) {
+		if (clean != null && buffer != null && buffer.isDirect()) {
+			try {
+				clean.invoke(cleaner.invoke(buffer));
+			} catch (final Exception ex) {
+				ex.printStackTrace();
+			}
+		}
+	}
 
 	private final static int INT_SIZE = 4;
 	private final static int BYTE_SIZE = 1;
 	public final static int CHUNK_STREAM_HEADER_SIZE = INT_SIZE + BYTE_SIZE;
 	public final static int SECTOR_SIZE = 4096;
 	private final static int MAX_SECTORS_PER_CHUNK_STREAM = 255;
-	public final static int MIN_SECTORS_PER_CHUNK_STREAM = 2;
+	public final static int MIN_SECTORS_PER_CHUNK_STREAM = 3;
+	private final static int ALLOWED_SECTOR_SHRINKAGE = 2;
 	private final static int SECTOR_COUNT_MASK = MAX_SECTORS_PER_CHUNK_STREAM;
 	private final static int SECTOR_NUMBER_SHIFT = 8;
 	private final static int REGION_CHUNK_DIMENSION = 32;
@@ -97,33 +136,29 @@ public final class RegionFile {
 	// Information about a given chunk stream
 	private final static int SECTOR_START = 0;
 	private final static int SECTOR_COUNT = 1;
-	private final static int STREAM_VERSION = 2;
-	private final static int[] NO_CHUNK_INFORMATION = { 0, 0, 0 };
-	private final static int[] INVALID = {};
+	private final static int[] NO_CHUNK_INFORMATION = { 0, 0 };
 
 	// Stream versions as of this release
 	private final static byte STREAM_VERSION_UNKNOWN = 0;
 	private final static byte STREAM_VERSION_GZIP = 1;
 	private final static byte STREAM_VERSION_FLATION = 2;
 
+	private final static Set<StandardOpenOption> OPEN_OPTIONS = Sets.newHashSet(StandardOpenOption.READ,
+			StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+
 	// Instance members
 	private String name;
-	private AsynchronousFileChannel channel;
+	private FileChannel channel;
 	private BitSet sectorUsed;
 	private int sectorsInFile;
-	private byte[] controlSectors;
-	private IntBuffer controlCache;
-	private boolean dirtyControl;
-	private byte[] compressionVersion = new byte[CHUNKS_IN_REGION];
+	private MappedByteBuffer mapped;
+	private IntBuffer control;
+	private byte[] streamVersion = new byte[CHUNKS_IN_REGION];
 
-	// Used to handle flushing of the control region
-	// when used concurrently.
-	private AtomicInteger outstandingWrites = new AtomicInteger();
-	
 	private static int getChunkStreamId(final int regionX, final int regionZ) {
 		return regionX + regionZ * REGION_CHUNK_DIMENSION;
 	}
-	
+
 	// Used to logically lock a chunk while it is being operated on.
 	// It is expected that concurrent calls into RegionFile will be
 	// for different chunks thus allowing good concurrency, but in
@@ -147,20 +182,14 @@ public final class RegionFile {
 	}
 
 	// Pre-read cache
-	/**
-	 * Listener that receives notification when a ChunkInputStream is evicted from
-	 * the cache.  It can be evicted because of time expiry, or if a read request
-	 * can be satisfied from the cache.
-	 */
-	private final static long EXPIRY_TIME = 10;
+	private final static long EXPIRY_TIME = 20;
 
 	private static final class ChunkStreamEviction implements RemovalListener<Integer, ChunkInputStream> {
 		@Override
 		public void onRemoval(RemovalNotification<Integer, ChunkInputStream> notification) {
-			final ChunkInputStream stream = notification.getValue();
-			if (!stream.isBaked())
+			if (notification.wasEvicted())
 				try {
-					ChunkInputStream.returnStream(stream);
+					ChunkInputStream.returnStream(notification.getValue());
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
@@ -175,8 +204,7 @@ public final class RegionFile {
 		try {
 
 			this.name = regionFile.getPath();
-			this.channel = AsynchronousFileChannel.open(regionFile.toPath(), StandardOpenOption.READ,
-					StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+			this.channel = FileChannel.open(regionFile.toPath(), OPEN_OPTIONS);
 			this.sectorsInFile = sectorCount();
 			final boolean needsInit = this.sectorsInFile < 2;
 
@@ -184,27 +212,30 @@ public final class RegionFile {
 			// region. sectorsInFile will automagically
 			// update when writing empty sectors.
 			if (needsInit)
-				writeEmptySectors(0, EXTEND_SECTOR_QUANTITY + 2);
+				extendFile(EXTEND_SECTOR_QUANTITY + 2);
 
-			this.sectorUsed = new BitSet(this.sectorsInFile);
-			this.sectorUsed.set(0); // Offset data
-			this.sectorUsed.set(1); // Timestamp data
+			this.mapped = this.channel.map(MapMode.READ_WRITE, 0, SECTOR_SIZE * 2);
+			this.control = this.mapped.asIntBuffer();
 
-			// Read the control sectors out of the file and wrap
-			// up in an IntBuffer for convenience.
-			this.controlSectors = readSectors(0, 2, null);
-			this.controlCache = ByteBuffer.wrap(controlSectors).asIntBuffer();
+			this.sectorUsed = new BitSet(Math.max(1024, this.sectorsInFile));
+			this.sectorUsed.set(0, 2); // Control sectors
 
 			// If the region file has stream data in it process the control
 			// cache information and initialize the used sector map.
 			if (!needsInit) {
 				for (int j = 0; j < CHUNKS_IN_REGION; j++) {
-					final int streamInfo = this.controlCache.get(j);
+					final int streamInfo = this.control.get(j);
 					if (streamInfo != 0) {
 						final int sectorNumber = streamInfo >> SECTOR_NUMBER_SHIFT;
 						final int numberOfSectors = streamInfo & SECTOR_COUNT_MASK;
-						if (sectorNumber + numberOfSectors <= this.sectorsInFile)
+						if (sectorNumber + numberOfSectors <= this.sectorsInFile) {
 							this.sectorUsed.set(sectorNumber, sectorNumber + numberOfSectors);
+						} else {
+							logger.error(
+									String.format("%s: stream control data exceeds file size (streamId: %d, info: %d",
+											name, j, streamInfo));
+							// this.control.put(j, 0);
+						}
 					}
 				}
 			}
@@ -213,36 +244,35 @@ public final class RegionFile {
 		}
 	}
 
-	private void writeEmptySectors(final int sectorNumber, final int count) throws Exception {
+	private void extendFile(final int count) throws Exception {
+		final int base = sectorCount();
 		for (int i = 0; i < count; i++)
-			writeSectors(sectorNumber + i, EMPTY_SECTOR, SECTOR_SIZE);
+			writeSectors(base + i, EMPTY_SECTOR, SECTOR_SIZE);
 		this.sectorsInFile = sectorCount();
+		if (base + count != this.sectorsInFile)
+			logger.error(String.format("%d: extend file incorrect length", name));
 	}
 
-	private byte[] readSectors(final int sectorNumber, final int count, byte[] buffer)
-			throws IOException, InterruptedException, ExecutionException {
+	private byte[] readSectors(final int sectorNumber, final int count, byte[] buffer) throws Exception {
 		final int dataPosition = sectorNumber * SECTOR_SIZE;
 		final int dataLength = count * SECTOR_SIZE;
 		if (buffer == null || buffer.length < dataLength)
 			buffer = new byte[dataLength];
-		final Future<Integer> bytesRead = channel.read(ByteBuffer.wrap(buffer, 0, dataLength), dataPosition);
-		if (bytesRead.get().intValue() != dataLength)
-			logger.error("Incorrect bytes read: " + bytesRead + ", expected " + dataLength);
+		final int bytesRead = channel.read(ByteBuffer.wrap(buffer, 0, dataLength), dataPosition);
+		if (bytesRead != dataLength)
+			logger.error(String.format("%s: Incorrect bytes read: %d, expected %d", name, bytesRead, dataLength));
 
 		return buffer;
 	}
 
-	private void writeSectors(final int sectorNumber, final byte[] buffer, final int length)
-			throws IOException, InterruptedException, ExecutionException {
-		final Future<Integer> bytesWritten = channel.write(ByteBuffer.wrap(buffer, 0, length),
-				sectorNumber * SECTOR_SIZE);
-		if (bytesWritten.get().intValue() != length)
-			logger.error("Incorrect bytes written: " + bytesWritten + ", expected " + length);
+	private void writeSectors(final int sectorNumber, final byte[] buffer, final int length) throws Exception {
+		final int bytesWritten = channel.write(ByteBuffer.wrap(buffer, 0, length), sectorNumber * SECTOR_SIZE);
+		if (bytesWritten != length)
+			logger.error(String.format("%s: Incorrect bytes written: %d, expected %d", name, bytesWritten, length));
 	}
 
 	private boolean isValidFileRegion(final int sector, final int count) {
-		return sector != 0 && sector != 1
-				&& (sector + count - 1) <= this.sectorUsed.previousSetBit(this.sectorUsed.length());
+		return (sector + count) <= this.sectorUsed.length();
 	}
 
 	private int sectorCount() throws Exception {
@@ -255,11 +285,11 @@ public final class RegionFile {
 
 	public boolean chunkExists(final int regionX, final int regionZ) {
 
-		final int[] info = this.getChunkInformation(regionX, regionZ);
-		if (info == INVALID || info == NO_CHUNK_INFORMATION)
+		if (outOfBounds(regionX, regionZ))
 			return false;
 
-		if (info[STREAM_VERSION] != STREAM_VERSION_UNKNOWN)
+		final int streamId = getChunkStreamId(regionX, regionZ);
+		if (getStreamVersion(streamId) != STREAM_VERSION_UNKNOWN)
 			return true;
 
 		try {
@@ -268,15 +298,8 @@ public final class RegionFile {
 			// a recognized stream version. Otherwise we don't know
 			// about it.
 			final DataInputStream stream = (ChunkInputStream) getChunkDataInputStream(regionX, regionZ);
-			if (stream instanceof ChunkInputStream) {
-				final ChunkInputStream temp = (ChunkInputStream) stream;
-				
-				// Unbake before sticking it in the cache.  The bake flag
-				// is used by the eviction routine to decide what to do
-				// with the stream.
-				temp.unbake();
-				preRead.put(getChunkStreamId(regionX, regionZ), temp);
-			}
+			if (stream instanceof ChunkInputStream)
+				preRead.put(streamId, (ChunkInputStream) stream);
 
 			return stream != null;
 
@@ -287,28 +310,30 @@ public final class RegionFile {
 		return false;
 	}
 
-	public DataInputStream getChunkDataInputStream(final int regionX, final int regionZ) {
-		final int[] info = getChunkInformation(regionX, regionZ);
-		if (info == NO_CHUNK_INFORMATION || info == INVALID)
+	public DataInputStream getChunkDataInputStream(final int regionX, final int regionZ) throws Exception {
+
+		if (outOfBounds(regionX, regionZ))
 			return null;
 
-		final int sectorNumber = info[SECTOR_START];
-		final int numberOfSectors = info[SECTOR_COUNT];
+		final int streamId = getChunkStreamId(regionX, regionZ);
+		lockChunk(streamId);
 
 		try {
-
-			final int streamId = getChunkStreamId(regionX, regionZ);
-			
 			// Check the pre-read cache first to see if it is there.
 			// This is possible because the stream could have been
 			// loaded via chunkExists().
 			ChunkInputStream stream = preRead.getIfPresent(streamId);
 			if (stream != null) {
-				// Note that bake has to occur before the invalidate.
-				stream.bake();
 				preRead.invalidate(streamId);
 				return stream;
 			}
+
+			final int[] info = getChunkInformation(streamId);
+			if (info == NO_CHUNK_INFORMATION)
+				return null;
+
+			final int sectorNumber = info[SECTOR_START];
+			final int numberOfSectors = info[SECTOR_COUNT];
 
 			// Looks like we have to do a read
 			stream = ChunkInputStream.getStream();
@@ -317,45 +342,48 @@ public final class RegionFile {
 
 			synchronized (this) {
 				if (!isValidFileRegion(sectorNumber, numberOfSectors)) {
-					logger.error(String.format("'%s' returning null (%d, %d)", name, sectorNumber, numberOfSectors));
+					logger.error(String.format("%s: returning null (%d, %d) for streamId %d", name, sectorNumber,
+							numberOfSectors, streamId));
 					ChunkInputStream.returnStream(stream);
 					return null;
 				}
 			}
 
-			try {
-				lockChunk(streamId);
-				readSectors(sectorNumber, numberOfSectors, buffer);
-			} finally {
-				unlockChunk(streamId);
-			}
+			readSectors(sectorNumber, numberOfSectors, buffer);
 
 			final int streamLength = getInt(buffer);
 
 			if (streamLength <= 0 || streamLength > dataLength) {
-				logger.error(name + " " + regionX + " " + regionZ + " streamLength (" + streamLength + ") return null");
+				logger.error(String.format("%s: x%d z%d streamLength (%d) return null", name, regionX, regionZ,
+						streamLength));
 				ChunkInputStream.returnStream(stream);
 				return null;
 			}
 
 			// Pass back an appropriate stream for the requester
-			switch (buffer[4]) {
-			case STREAM_VERSION_FLATION:
-				setCompressionVersion(streamId, STREAM_VERSION_FLATION);
-				return stream.bake();
-			case STREAM_VERSION_GZIP:
+			DataInputStream result = null;
+			if (buffer[4] == STREAM_VERSION_FLATION) {
+				setStreamVersion(streamId, STREAM_VERSION_FLATION);
+				result = stream.bake();
+			} else if (buffer[4] == STREAM_VERSION_GZIP) {
 				// Older MC version - going to be upgraded next write. Can't use
 				// the ChunkInputStream for this.
 				final InputStream is = new ByteArrayInputStream(Arrays.copyOf(buffer, buffer.length),
 						CHUNK_STREAM_HEADER_SIZE, dataLength);
-				setCompressionVersion(streamId, STREAM_VERSION_GZIP);
+				setStreamVersion(streamId, STREAM_VERSION_GZIP);
 				ChunkInputStream.returnStream(stream);
-				return new DataInputStream(new GZIPInputStream(is));
-			default:
-				;
+				result = new DataInputStream(new GZIPInputStream(is));
+			} else {
+				setStreamVersion(streamId, STREAM_VERSION_UNKNOWN);
+				logger.error(String.format("%s: Unrecognized stream version: %d", name, buffer[4]));
 			}
+
+			return result;
+
 		} catch (final Exception e) {
 			e.printStackTrace();
+		} finally {
+			unlockChunk(streamId);
 		}
 
 		return null;
@@ -395,69 +423,74 @@ public final class RegionFile {
 		return this.sectorsInFile;
 	}
 
-	void write(final int regionX, final int regionZ, final byte[] buffer, final int length) {
+	void write(final int regionX, final int regionZ, final byte[] buffer, final int length) throws Exception {
+
+		if (outOfBounds(regionX, regionZ))
+			return;
+
 		// Incoming buffer has header incorporated. Need to enforce the
 		// minimum sectors per chunk stream policy.
-		final int sectorsRequired = Math.max((length + SECTOR_SIZE - 1) / SECTOR_SIZE, MIN_SECTORS_PER_CHUNK_STREAM);
+		int sectorsRequired = Math.max((length + SECTOR_SIZE - 1) / SECTOR_SIZE, MIN_SECTORS_PER_CHUNK_STREAM);
 		if (sectorsRequired > MAX_SECTORS_PER_CHUNK_STREAM) {
 			logger.error("Chunk stream required more than " + MAX_SECTORS_PER_CHUNK_STREAM + "sectors to write");
 			return;
 		}
 
-		final int[] info = getChunkInformation(regionX, regionZ);
-		if (info == INVALID)
-			return;
+		final int streamId = getChunkStreamId(regionX, regionZ);
+		lockChunk(streamId);
 
-		int sectorNumber = info[SECTOR_START];
-		final int numberOfSectors = info[SECTOR_COUNT];
-
-		// Only need to worry about setting metadata if the chunk is new
-		// or it changed sizes. Otherwise it will be rewriting the same
-		// sectors so there is no contention.
-		boolean setMetadata = sectorNumber == 0 || numberOfSectors != sectorsRequired;
-
-		outstandingWrites.incrementAndGet();
-		try {
-			
-			final int streamId = getChunkStreamId(regionX, regionZ);
-			
-			// Invalidate any cached data
+		// Invalidate any cached data
+		final ChunkInputStream stream = preRead.getIfPresent(streamId);
+		if (stream != null) {
 			preRead.invalidate(streamId);
+			ChunkInputStream.returnStream(stream);
+		}
 
-			if (setMetadata)
+		try {
+
+			final int[] info = getChunkInformation(streamId);
+			int sectorNumber = info[SECTOR_START];
+			final int currentSectorCount = info[SECTOR_COUNT];
+
+			// A new stream is required if:
+			//
+			// - Its a brand new chunk stream for the file
+			//
+			// - The size of the incoming stream is greater than the current
+			// sector allocation.
+			//
+			// - The size of the incoming stream is less, and exceeds the
+			// allowed shrinkage amount
+			final boolean newChunkStream = sectorNumber == 0 || sectorsRequired > currentSectorCount
+					|| sectorsRequired < (currentSectorCount - ALLOWED_SECTOR_SHRINKAGE);
+
+			if (newChunkStream)
 				synchronized (this) {
 					// "Free" up the existing sectors
 					if (sectorNumber != 0)
-						this.sectorUsed.clear(sectorNumber, sectorNumber + numberOfSectors);
+						this.sectorUsed.clear(sectorNumber, sectorNumber + currentSectorCount);
 
 					// Find some free sectors to write on. If we can't find any
 					// need to extend the file.
 					sectorNumber = findContiguousSectors(sectorsRequired);
 					if (this.sectorsInFile - sectorNumber < sectorsRequired)
-						writeEmptySectors(sectorNumber, Math.max(sectorsRequired, EXTEND_SECTOR_QUANTITY));
+						extendFile(Math.max(sectorsRequired, EXTEND_SECTOR_QUANTITY));
 
 					// Mark our sectors used and update the mapping
 					this.sectorUsed.set(sectorNumber, sectorNumber + sectorsRequired);
 					setChunkInformation(streamId, sectorNumber, sectorsRequired, STREAM_VERSION_FLATION);
 				}
+			else
+				// In case it is an upgrade from GZIP
+				setStreamVersion(streamId, STREAM_VERSION_FLATION);
 
-			try {
-				lockChunk(streamId);
-				writeSectors(sectorNumber, buffer, length);
-				setChunkTimestamp(streamId, (int) (System.currentTimeMillis() / 1000L));
-			} finally {
-				unlockChunk(streamId);
-			}
-			
+			writeSectors(sectorNumber, buffer, length);
+			setChunkTimestamp(streamId, (int) System.currentTimeMillis() / 1000);
+
 		} catch (final Exception ex) {
 			ex.printStackTrace();
 		} finally {
-			if(outstandingWrites.decrementAndGet() == 0)
-				try {
-					flushControl();
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
+			unlockChunk(streamId);
 		}
 	}
 
@@ -479,50 +512,37 @@ public final class RegionFile {
 	}
 
 	public boolean isChunkSaved(final int regionX, final int regionZ) {
-		return this.controlCache.get(getChunkStreamId(regionX, regionZ)) != 0;
+		return this.control.get(getChunkStreamId(regionX, regionZ)) != 0;
 	}
 
-	private int[] getChunkInformation(final int regionX, final int regionZ) {
-		if (outOfBounds(regionX, regionZ))
-			return INVALID;
-
-		int idx = getChunkStreamId(regionX, regionZ);
-		final int streamInfo = this.controlCache.get(idx);
+	private int[] getChunkInformation(final int streamId) {
+		final int streamInfo = this.control.get(streamId);
 		if (streamInfo == 0)
 			return NO_CHUNK_INFORMATION;
 
 		final int sectorNumber = streamInfo >> SECTOR_NUMBER_SHIFT;
 		final int numberOfSectors = streamInfo & SECTOR_COUNT_MASK;
-		return new int[] { sectorNumber, numberOfSectors, this.compressionVersion[idx] };
+		return new int[] { sectorNumber, numberOfSectors };
 	}
 
-	private void flushControl() throws Exception {
-		if (this.dirtyControl) {
-			writeSectors(0, this.controlSectors, SECTOR_SIZE * 2);
-			this.dirtyControl = false;
-		}
-	}
-
-	private void setChunkInformation(final int streamId, final int sectorNumber,
-			final int sectorCount, final byte streamVersion) throws IOException {
+	private void setChunkInformation(final int streamId, final int sectorNumber, final int sectorCount,
+			final byte streamVersion) throws IOException {
 		final int info = sectorNumber << SECTOR_NUMBER_SHIFT | sectorCount;
-		if (info != this.controlCache.get(streamId)) {
-			this.controlCache.put(streamId, info);
-			this.dirtyControl = true;
-		}
-		this.compressionVersion[streamId] = streamVersion;
+		this.control.put(streamId, info);
+		this.streamVersion[streamId] = streamVersion;
 	}
 
 	private void setChunkTimestamp(final int streamId, final int value) throws IOException {
 		final int idx = streamId + CHUNKS_IN_REGION;
-		if (value != this.controlCache.get(idx)) {
-			this.controlCache.put(idx, value);
-			this.dirtyControl = true;
-		}
+		this.control.put(idx, value);
 	}
 
-	private void setCompressionVersion(final int streamId, final byte value) {
-		this.compressionVersion[streamId] = value;
+	private int getStreamVersion(final int streamId) {
+		return this.streamVersion[streamId];
+	}
+
+	private void setStreamVersion(final int streamId, final byte value) {
+		this.streamVersion[streamId] = value;
 	}
 
 	@SuppressWarnings("unused")
@@ -542,9 +562,11 @@ public final class RegionFile {
 		// result[2], result[2] * 100 / result[1]));
 		if (this.channel != null) {
 			preRead.invalidateAll();
-			flushControl();
+			this.mapped.force();
+			this.channel.force(true);
 			this.channel.close();
 			this.channel = null;
+			freeMemoryMap(this.mapped);
 		}
 	}
 

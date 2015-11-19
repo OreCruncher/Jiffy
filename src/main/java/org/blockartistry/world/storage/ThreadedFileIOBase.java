@@ -28,8 +28,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import net.minecraft.world.ChunkCoordIntPair;
 
@@ -62,16 +65,17 @@ public class ThreadedFileIOBase {
 
 	static {
 
-		pool = Executors.newFixedThreadPool(THREAD_COUNT);
+		final ThreadFactory factory = new ThreadFactoryBuilder().setNameFormat("Storage #%d").build();
+		pool = Executors.newFixedThreadPool(THREAD_COUNT, factory);
 		threadedIOInstance = new ThreadedFileIOBase();
 		logger.info("Created threadpool with " + THREAD_COUNT + " threads");
 	}
 
 	private static class WrapperIThreadedFileIO implements Runnable {
-		
+
 		private final IThreadedFileIO task;
 		private final AtomicInteger counter;
-		
+
 		public WrapperIThreadedFileIO(final IThreadedFileIO task, final AtomicInteger counter) {
 			this.task = task;
 			this.counter = counter;
@@ -79,21 +83,22 @@ public class ThreadedFileIOBase {
 
 		@Override
 		public void run() {
-	        try {
-	            this.task.writeNextIO();
-	        } finally {
-	            this.counter.decrementAndGet();
-	        }
+			try {
+				this.task.writeNextIO();
+			} finally {
+				this.counter.decrementAndGet();
+			}
 		}
 	}
-	
+
 	private static class WrapperChunkCoordIO implements Runnable {
-		
+
 		private final IThreadedFileIO task;
 		private final ChunkCoordIntPair coords;
 		private final AtomicInteger counter;
-		
-		public WrapperChunkCoordIO(final IThreadedFileIO task, final ChunkCoordIntPair coords, final AtomicInteger counter) {
+
+		public WrapperChunkCoordIO(final IThreadedFileIO task, final ChunkCoordIntPair coords,
+				final AtomicInteger counter) {
 			this.task = task;
 			this.coords = coords;
 			this.counter = counter;
@@ -127,9 +132,9 @@ public class ThreadedFileIOBase {
 			}
 		}
 	}
-	
+
 	public void queueIO(final IThreadedFileIO task, final ChunkCoordIntPair chunkCoords) throws Exception {
-		if(chunkCoords != null) {
+		if (chunkCoords != null) {
 			outstandingTasks.incrementAndGet();
 			try {
 				pool.submit(new WrapperChunkCoordIO(task, chunkCoords, outstandingTasks));

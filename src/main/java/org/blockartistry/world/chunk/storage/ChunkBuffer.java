@@ -94,7 +94,11 @@ public class ChunkBuffer extends OutputStream {
 		this.buf[2] = (byte) ((len >>> 8) & 0xFF);
 		this.buf[3] = (byte) ((len >>> 0) & 0xFF);
 		this.buf[4] = 2; // STREAM_VERSION_FLATION
-		this.file.write(this.chunkX, this.chunkZ, this.buf, this.count);
+		try {
+			this.file.write(this.chunkX, this.chunkZ, this.buf, this.count);
+		} catch(final Exception ex) {
+			ex.printStackTrace();
+		}
 		this.file = null;
 	}
 
