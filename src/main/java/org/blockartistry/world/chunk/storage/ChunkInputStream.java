@@ -94,7 +94,7 @@ public class ChunkInputStream extends DataInputStream {
 	 */
 	byte[] getBuffer(final int desiredSize) {
 		if (desiredSize > this.inputBuffer.length)
-			this.inputBuffer = new byte[Math.max(desiredSize, DEFAULT_BUFFER_SIZE)];
+			this.inputBuffer = new byte[desiredSize];
 
 		return this.inputBuffer;
 	}

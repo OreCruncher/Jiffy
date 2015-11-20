@@ -88,11 +88,19 @@ public class ChunkBuffer extends OutputStream {
 	}
 
 	public void close() throws IOException {
+		// Encode the stream length
 		final int len = this.count - RegionFile.CHUNK_STREAM_HEADER_SIZE;
 		this.buf[0] = (byte) ((len >>> 24) & 0xFF);
 		this.buf[1] = (byte) ((len >>> 16) & 0xFF);
 		this.buf[2] = (byte) ((len >>> 8) & 0xFF);
 		this.buf[3] = (byte) ((len >>> 0) & 0xFF);
+		// Encode the time stamp
+		final int stamp = (int)(System.currentTimeMillis() / 1000);
+		this.buf[4] = (byte) ((stamp >>> 24) & 0xFF);
+		this.buf[5] = (byte) ((stamp >>> 16) & 0xFF);
+		this.buf[6] = (byte) ((stamp >>> 8) & 0xFF);
+		this.buf[7] = (byte) ((stamp >>> 0) & 0xFF);
+		
 		try {
 			this.file.write(this.chunkX, this.chunkZ, this.buf, this.count);
 		} catch(final Exception ex) {

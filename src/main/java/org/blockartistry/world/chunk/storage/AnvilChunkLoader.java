@@ -64,11 +64,10 @@ import com.google.common.cache.RemovalNotification;
  * Implementation of a new AnvilChunkLoader. The improvements that have been
  * made:
  * 
- * + Single list tracking pending write operations rather than having two lists
- * which resulted in a double search.
- * 
- * + Use a Map instead of array for lookups of cached writes. Eliminate
- * PendingChunk in the process.
+ * + This implementation uses a Cache rather than an ArrayList().  This
+ * allows for highly concurrent access between Minecraft and the underlying
+ * IO routines.  The write to disk occurs when an IO thread comes through and
+ * invalidates the cache entry.
  * 
  * + Issue a close() on the ChunkInputStream object when the chunk has been
  * deserialized. This permits the object to be placed back into the object pool.
@@ -81,10 +80,6 @@ import com.google.common.cache.RemovalNotification;
  * be changed to use a file as a semaphore by obtaining an exclusive lock when
  * the world loads and croak at that time if there is contention.
  *
- * + This implementation uses a Cache rather than an ArrayList().  This
- * allows for highly concurrent access between Minecraft and the underlying
- * IO routines.  The write to disk occurs when an IO thread comes through and
- * invalidates the cache entry.
  */
 public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 

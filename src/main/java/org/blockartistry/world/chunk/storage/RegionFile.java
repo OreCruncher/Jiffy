@@ -26,7 +26,6 @@ package org.blockartistry.world.chunk.storage;
 import java.io.*;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
-import java.nio.IntBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
@@ -48,21 +47,22 @@ import com.google.common.collect.Sets;
  * + Using BitSet to track used sectors within the data file rather than an
  * array of Boolean objects.
  *
- * + Chunk stream version information is now encoded in the offset table. Avoids
- * the need of actually doing a partial read of the stream from the file on a
- * chunkExist() check. Improves concurrency with ChunkIOExector.
+ * + Chunk stream version information is now encoded in the control table.
+ * Avoids the need of actually doing a partial read of the stream from the file
+ * on a chunkExist() check. Improves concurrency with ChunkIOExector.
  * 
  * + Increase the size of the chunk stream header to 32 bytes. Ditched the
- * encoded version data, kept the length. 7 integers are reserved.
+ * encoded version data, kept the length field. 7 integers are reserved.
  * 
- * + Reserve 4 sectors for the control region for further growth.
+ * + Control region is 4 sectors; extra space is for future growth.
  * 
- * + Dump the timestamp update. Nothing in application logic used it. Could have
- * been an artifact.  There's space in the control region if needed.
+ * + Timestamp moved to the chunk stream header and out of the control
+ * region.  It wasn't consumed by the application, but it may be useful
+ * for debugging streams.
  * 
  * + Extend the data file with multiple empty sectors rather than just what is
- * needed for a given chunk write. This improves the overall time taken to
- * initialize a new region file.
+ * needed for a given chunk write. This improves the overall aggregate time
+ * creating new chunk streams in the file.
  * 
  * + Minimum sectors per chunk stream to give a bit of room for lightweight
  * chunks to grow without having to reallocate storage from a region file.
@@ -123,52 +123,66 @@ public final class RegionFile {
 		}
 	}
 
-	// Extension for the new region file.
+	// Extension for the region file. It is not "mca" though it does
+	// maintain a large portion of it's behavior.
 	public final static String REGION_FILE_EXTENSION = ".mca2";
 
 	private final static int INT_SIZE = 4;
-
-	// Header is comprised of 32 bytes. First 4 bytes is the stream
-	// size. The rest of the bytes are reserved.
-	public final static int CHUNK_STREAM_HEADER_SIZE = INT_SIZE * 8;
 	public final static int SECTOR_SIZE = 4096;
 	private final static int MAX_SECTORS_PER_CHUNK_STREAM = 255;
 	public final static int MIN_SECTORS_PER_CHUNK_STREAM = 2;
-	private final static int ALLOWED_SECTOR_SHRINKAGE = 1;
+	private final static int ALLOWED_SECTOR_SHRINKAGE = 2;
 	private final static int NUM_CONTROL_SECTORS = 4;
 	private final static int REGION_CHUNK_DIMENSION = 32;
 	private final static int CHUNKS_IN_REGION = REGION_CHUNK_DIMENSION * REGION_CHUNK_DIMENSION;
 	private final static int EXTEND_SECTOR_QUANTITY = MIN_SECTORS_PER_CHUNK_STREAM * 128;
 	private final static byte[] EMPTY_SECTOR = new byte[SECTOR_SIZE];
 
-	// Information about the file layout. First integer in the file
-	// is the version.
+	//////////////////////
+	//
+	// Region File Control
+	//
+	//////////////////////
+
+	// INTEGER: control[0 - 3] - signature
+	private final static int REGION_FILE_SIGNATURE_OFFSET = 0;
 	private final static int REGION_FILE_SIGNATURE = 0xB10CD00D;
-	private final static int REGION_FILE_VERSION_1 = 1;
+	// INTEGER: control[4 - 7] - region file version
+	private final static int REGION_FILE_VERSION_OFFSET = REGION_FILE_SIGNATURE_OFFSET + INT_SIZE;
+	private final static int REGION_FILE_VERSION_MASK = 0x000000FF;
+	private final static byte REGION_FILE_VERSION_1 = 1;
+	// BYTE: control[8 - 63] - reserved (zero)
+	// INTEGER: control[64 - 4159] - chunk stream information table
+	private final static int SECTOR_COUNT_MASK = 0x000000FF;
+	private final static int SECTOR_START_MASK = 0xEFFFFF00;
+	private final static int SECTOR_START_SHIFT = 8;
+	private final static int CHUNK_INFO_TABLE_OFFSET = 64;
+	// BYTE: control[4160 - 5183] - chunk stream version information table
+	private final static byte CHUNK_STREAM_VERSION_UNKNOWN = 0;
+	private final static byte CHUNK_STREAM_VERSION_FLATION = 1;
+	private final static int CHUNK_STREAM_VERSION_TABLE_OFFSET = CHUNK_INFO_TABLE_OFFSET
+			+ (CHUNKS_IN_REGION * INT_SIZE);
+	// BYTE: control[5184 - 16383] - unallocated region (zero)
+	@SuppressWarnings("unused")
+	private final static int UNALLOCATED = CHUNK_STREAM_VERSION_TABLE_OFFSET + CHUNKS_IN_REGION;
 
-	// Starting offset of the chunk directory in the control region,
-	// in 32 bit integers.
-	private final static int OFFSET_ENTRY_BASE = 1024;
+	// Chunk Stream Version 1
 
-	// Information about a given chunk stream returned by
-	// getChunkInformation().  Essentially the stuff
-	// encoded in control region for the chunk.
-	private final static int SECTOR_START = 0;
-	private final static int SECTOR_COUNT = 1;
-	private final static int STREAM_VERSION = 2;
+	// Header is 16 bytes in length
+	public final static int CHUNK_STREAM_HEADER_SIZE = 16;
+	// INTEGER: buffer[0 - 3] - Chunk Stream Length exclusive of header
+	// INTEGER: buffer[4 - 7] - Time stamp of write
+	// BYTE: buffer[8 - 15] - reserved (zero)
+	// BYTE: buffer[16...] - Deflate compressed NBT stream
+
+	// getChunkInformation() result structure
+	private final static int INFO_SECTOR_START = 0;
+	private final static int INFO_SECTOR_COUNT = 1;
+	private final static int INFO_STREAM_VERSION = 2;
 	private final static int[] NO_CHUNK_INFORMATION = { 0, 0, 0 };
-
-	// Stream versions as of this release
-	private final static byte STREAM_VERSION_UNKNOWN = 0;
-	private final static byte STREAM_VERSION_FLATION = 1;
 
 	// Masks for cracking a control entry. Upper byte is
 	// not used and reserved.
-	private final static int SECTOR_COUNT_MASK = 0x000000FF;
-	private final static int SECTOR_START_MASK = 0x00FFFF00;
-	private final static int SECTOR_START_SHIFT = 8;
-	private final static int STREAM_VERSION_MASK = 0x0F000000;
-	private final static int STREAM_VERSION_SHIFT = 24;
 
 	// Standard options for opening a FileChannel
 	private final static Set<StandardOpenOption> OPEN_OPTIONS = Sets.newHashSet(StandardOpenOption.READ,
@@ -179,8 +193,11 @@ public final class RegionFile {
 	private FileChannel channel;
 	private BitSet sectorUsed;
 	private int sectorsInFile;
-	private MappedByteBuffer mapped;
-	private IntBuffer control;
+	private MappedByteBuffer control;
+
+	// Cache to avoid going to underlying map if possible.
+	private int[] chunkInfo = new int[CHUNKS_IN_REGION];
+	private byte[] streamVersionInfo = new byte[CHUNKS_IN_REGION];
 
 	// Used to logically lock a chunk while it is being operated on.
 	// It is expected that concurrent calls into RegionFile will be
@@ -204,6 +221,18 @@ public final class RegionFile {
 		}
 	}
 
+	private void initializeHeader() {
+		this.control.putInt(REGION_FILE_SIGNATURE_OFFSET, REGION_FILE_SIGNATURE);
+		this.control.putInt(REGION_FILE_VERSION_OFFSET, REGION_FILE_VERSION_1);
+	}
+
+	private void readHeader() throws Exception {
+		if (this.control.getInt(REGION_FILE_SIGNATURE_OFFSET) != REGION_FILE_SIGNATURE)
+			throw new RuntimeException("Not a recognized region file");
+		else if ((this.control.getInt(REGION_FILE_VERSION_OFFSET) & REGION_FILE_VERSION_MASK) != REGION_FILE_VERSION_1)
+			throw new RuntimeException("Not a recognized region file version");
+	}
+
 	public RegionFile(final File regionFile) {
 
 		try {
@@ -213,22 +242,15 @@ public final class RegionFile {
 			this.sectorsInFile = sectorCount();
 			final boolean needsInit = this.sectorsInFile < NUM_CONTROL_SECTORS;
 
-			// Initialize control sectors plus some blank
-			// region. sectorsInFile will auto-magically
-			// update when writing empty sectors.
 			if (needsInit)
 				extendFile(EXTEND_SECTOR_QUANTITY + NUM_CONTROL_SECTORS);
 
-			this.mapped = this.channel.map(MapMode.READ_WRITE, 0, SECTOR_SIZE * NUM_CONTROL_SECTORS);
-			this.control = this.mapped.asIntBuffer();
+			this.control = this.channel.map(MapMode.READ_WRITE, 0, SECTOR_SIZE * NUM_CONTROL_SECTORS);
 
-			if (needsInit) {
-				this.control.put(0, REGION_FILE_SIGNATURE);
-				this.control.put(1, REGION_FILE_VERSION_1);
-			} else if (this.control.get(0) != REGION_FILE_SIGNATURE)
-				throw new Exception("Not a recognized region file");
-			else if (this.control.get(1) != REGION_FILE_VERSION_1)
-				throw new Exception("Not a recognized region file version");
+			if (needsInit)
+				initializeHeader();
+			else
+				readHeader();
 
 			// Pre-allocate enough bits to fit either the number of sectors
 			// currently present in the file, or 1024 minimum size chunk
@@ -241,17 +263,21 @@ public final class RegionFile {
 			// cache information and initialize the used sector map.
 			if (!needsInit) {
 				for (int j = 0; j < CHUNKS_IN_REGION; j++) {
-					final int[] streamInfo = crackStreamInfo(this.control.get(j + OFFSET_ENTRY_BASE));
+					this.chunkInfo[j] = this.control.getInt((j * INT_SIZE) + CHUNK_INFO_TABLE_OFFSET);
+					this.streamVersionInfo[j] = this.control.get(j + CHUNK_STREAM_VERSION_TABLE_OFFSET);
+					final int[] streamInfo = getChunkInformation(j);
 					if (streamInfo != NO_CHUNK_INFORMATION) {
-						final int sectorNumber = streamInfo[SECTOR_START];
-						final int numberOfSectors = streamInfo[SECTOR_COUNT];
+						final int sectorNumber = streamInfo[INFO_SECTOR_START];
+						final int numberOfSectors = streamInfo[INFO_SECTOR_COUNT];
 						if (sectorNumber + numberOfSectors <= this.sectorsInFile) {
 							this.sectorUsed.set(sectorNumber, sectorNumber + numberOfSectors);
 						} else {
 							logger.error(
 									String.format("%s: stream control data exceeds file size (streamId: %d, info: %d)",
 											name, j, streamInfo));
-							this.control.put(j + OFFSET_ENTRY_BASE, 0);
+							this.control.putInt((j + CHUNK_INFO_TABLE_OFFSET) * INT_SIZE, 0);
+							this.chunkInfo[j] = 0;
+							this.streamVersionInfo[j] = 0;
 						}
 					}
 				}
@@ -309,10 +335,7 @@ public final class RegionFile {
 		lockChunk(streamId);
 
 		try {
-
-			final int[] streamInfo = getChunkInformation(streamId);
-			return streamInfo[STREAM_VERSION] != STREAM_VERSION_UNKNOWN;
-
+			return getStreamVersion(streamId) != CHUNK_STREAM_VERSION_UNKNOWN;
 		} finally {
 			unlockChunk(streamId);
 		}
@@ -331,11 +354,11 @@ public final class RegionFile {
 			if (info == NO_CHUNK_INFORMATION)
 				return null;
 
-			final int sectorNumber = info[SECTOR_START];
-			final int numberOfSectors = info[SECTOR_COUNT];
-			final int streamVersion = info[STREAM_VERSION];
+			final int sectorNumber = info[INFO_SECTOR_START];
+			final int numberOfSectors = info[INFO_SECTOR_COUNT];
+			final int streamVersion = info[INFO_STREAM_VERSION];
 
-			if (streamVersion != STREAM_VERSION_FLATION) {
+			if (streamVersion != CHUNK_STREAM_VERSION_FLATION) {
 				logger.error(String.format("%s: Unrecognized stream version: %d", name, streamVersion));
 				return null;
 			}
@@ -426,8 +449,8 @@ public final class RegionFile {
 		try {
 
 			final int[] info = getChunkInformation(streamId);
-			int sectorNumber = info[SECTOR_START];
-			final int currentSectorCount = info[SECTOR_COUNT];
+			int sectorNumber = info[INFO_SECTOR_START];
+			final int currentSectorCount = info[INFO_SECTOR_COUNT];
 
 			// A new stream is required if:
 			//
@@ -455,7 +478,7 @@ public final class RegionFile {
 
 					// Mark our sectors used and update the mapping
 					this.sectorUsed.set(sectorNumber, sectorNumber + sectorsRequired);
-					setChunkInformation(streamId, sectorNumber, sectorsRequired, STREAM_VERSION_FLATION);
+					setChunkInformation(streamId, sectorNumber, sectorsRequired, CHUNK_STREAM_VERSION_FLATION);
 				}
 
 			writeSectors(sectorNumber, buffer, length);
@@ -489,44 +512,68 @@ public final class RegionFile {
 	}
 
 	public boolean isChunkSaved(final int regionX, final int regionZ) {
-		return this.control.get(getChunkStreamId(regionX, regionZ) + OFFSET_ENTRY_BASE) != 0;
+		if (outOfBounds(regionX, regionZ))
+			return false;
+		return getChunkInformation(getChunkStreamId(regionX, regionZ)) != NO_CHUNK_INFORMATION;
 	}
 
-	private int[] crackStreamInfo(final int streamInfo) {
-		if (streamInfo == 0)
-			return NO_CHUNK_INFORMATION;
-
-		final int streamVersion = (streamInfo & STREAM_VERSION_MASK) >> STREAM_VERSION_SHIFT;
-		final int sectorNumber = (streamInfo & SECTOR_START_MASK) >> SECTOR_START_SHIFT;
-		final int numberOfSectors = streamInfo & SECTOR_COUNT_MASK;
-		return new int[] { sectorNumber, numberOfSectors, streamVersion };
+	private byte getStreamVersion(final int streamId) {
+		return this.streamVersionInfo[streamId];
 	}
 
 	private int[] getChunkInformation(final int streamId) {
-		return crackStreamInfo(this.control.get(streamId + OFFSET_ENTRY_BASE));
+		final int streamInfo = this.chunkInfo[streamId];
+		if (streamInfo == 0)
+			return NO_CHUNK_INFORMATION;
+
+		final int sectorNumber = (streamInfo & SECTOR_START_MASK) >> SECTOR_START_SHIFT;
+		final int numberOfSectors = streamInfo & SECTOR_COUNT_MASK;
+		final byte streamVersion = this.streamVersionInfo[streamId];
+
+		return new int[] { sectorNumber, numberOfSectors, streamVersion };
 	}
 
 	private void setChunkInformation(final int streamId, final int sectorNumber, final int sectorCount,
 			final byte streamVersion) throws IOException {
-		final int info = streamVersion << STREAM_VERSION_SHIFT | sectorNumber << SECTOR_START_SHIFT | sectorCount;
-		this.control.put(streamId + OFFSET_ENTRY_BASE, info);
+		final int streamInfo = (sectorNumber << SECTOR_START_SHIFT) & SECTOR_START_MASK
+				| (sectorCount & SECTOR_COUNT_MASK);
+		if(this.chunkInfo[streamId] != streamInfo) {
+			this.chunkInfo[streamId] = streamInfo;
+			this.control.putInt((streamId * INT_SIZE) + CHUNK_INFO_TABLE_OFFSET, streamInfo);
+		}
+		if(this.streamVersionInfo[streamId] != streamVersion) {
+			this.streamVersionInfo[streamId] = streamVersion;
+			this.control.put(streamId + CHUNK_STREAM_VERSION_TABLE_OFFSET, streamVersion);
+		}
 	}
 
 	private int[] analyzeSectors() {
 		final int lastUsedSector = this.sectorUsed.length() - 1;
 		final int gapSectors = lastUsedSector - this.sectorUsed.cardinality() + 1;
-		return new int[] { this.sectorsInFile, lastUsedSector, gapSectors };
+
+		int generatedChunks = 0;
+		int sectors = 0;
+		for (int i = 0; i < CHUNKS_IN_REGION; i++) {
+			final int[] info = getChunkInformation(i);
+			if (info != NO_CHUNK_INFORMATION) {
+				generatedChunks++;
+				sectors += info[INFO_SECTOR_COUNT];
+			}
+		}
+		return new int[] { this.sectorsInFile, lastUsedSector, gapSectors, generatedChunks, sectors };
 	}
 
 	public void close() throws Exception {
 		if (this.channel != null) {
 			final int[] result = analyzeSectors();
-			logger.debug(String.format("'%s': total sectors %d, last used sector %d, gaps %d (%d%%)", name(), result[0],
-					result[1], result[2], result[2] * 100 / result[1]));
-			if (this.mapped != null) {
-				this.mapped.force();
-				freeMemoryMap(this.mapped);
-				this.mapped = null;
+			logger.debug(String.format(
+					"'%s': total sectors %d, last used sector %d, gaps %d (%d%%), chunks %d, avg sectors %f", name(),
+					result[0], result[1], result[2], result[2] * 100 / result[1], result[3],
+					(float) result[4] / result[3]));
+			if (this.control != null) {
+				this.control.force();
+				freeMemoryMap(this.control);
+				this.control = null;
 			}
 			this.channel.force(true);
 			this.channel.close();
