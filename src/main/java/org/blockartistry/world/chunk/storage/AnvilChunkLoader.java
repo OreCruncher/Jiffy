@@ -125,7 +125,7 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		this.saveDir = saveLocation.getPath().intern();
 	}
 
-	public boolean chunkExists(final World world, final int chunkX, final int chunkZ) throws ExecutionException {
+	public boolean chunkExists(final World world, final int chunkX, final int chunkZ) throws Exception {
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
 		if (pendingIO.getIfPresent(coords) != null)
 			return true;

@@ -66,7 +66,7 @@ public class RegionFileCache {
 
 	// Number of entries to initialize the cache with
 	private static final int INITIAL_CAPACITY = 64;
-	
+
 	// Higher the concurrency number, the more parallel the cache can be.
 	// Use 8 because ThreadedFileIOBase, ChunkIOExecutor, and the Server
 	// thread total about 8.
@@ -120,7 +120,7 @@ public class RegionFileCache {
 			final File file = new File(key.dir, "region");
 			file.mkdirs();
 			final File file1 = new File(file, new StringBuilder(64).append("r.").append(key.chunkX).append('.')
-					.append(key.chunkZ).append(".mca").toString());
+					.append(key.chunkZ).append(RegionFile.REGION_FILE_EXTENSION).toString());
 			logger.debug("Loading '" + key.toString() + "'");
 			return new RegionFile(file1);
 		}
