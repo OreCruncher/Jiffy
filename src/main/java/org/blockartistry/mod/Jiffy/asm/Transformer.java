@@ -71,7 +71,9 @@ public class Transformer implements IClassTransformer {
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperChunkCoordIO", "world.storage.ThreadedFileIOBase$WrapperChunkCoordIO");
 
+		targets.put("net.minecraft.world.ChunkCoordIntPair", "world.ChunkCoordIntPair");
 		targets.put("net.minecraft.world.gen.ChunkProviderServer", "world.gen.ChunkProviderServer");
+		targets.put("agu", "world.ChunkCoordIntPair");
 		targets.put("ms", "world.gen.ChunkProviderServer");
 		
 		// Forge classes

@@ -3,7 +3,8 @@ package org.blockartistry.common.chunkio;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import net.minecraft.world.ChunkCoordIntPair;
+import org.blockartistry.world.gen.ChunkProviderServer;
+
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.storage.AnvilChunkLoader;
 import net.minecraftforge.common.MinecraftForge;
@@ -33,7 +34,6 @@ class ChunkIOProvider implements
 	}
 
 	// sync stuff
-	@SuppressWarnings("unchecked")
 	public void callStage2(QueuedChunk queuedChunk, net.minecraft.world.chunk.Chunk chunk) throws RuntimeException {
 		if (chunk == null) {
 			// If the chunk loading failed just do it synchronously (may
@@ -48,8 +48,8 @@ class ChunkIOProvider implements
 																								// ChunkDataEvent.Load
 																								// async
 		chunk.lastSaveTime = queuedChunk.provider.worldObj.getTotalWorldTime();
-        queuedChunk.provider.loadedChunkHashMap.add(ChunkCoordIntPair.chunkXZ2Int(queuedChunk.x, queuedChunk.z), chunk);
-        queuedChunk.provider.loadedChunks.add(chunk);
+		queuedChunk.provider.cache.add(ChunkProviderServer.toLong(queuedChunk.x, queuedChunk.z), chunk);
+		queuedChunk.provider.loadedChunks.add(chunk);
 		chunk.onChunkLoad();
 
 		if (queuedChunk.provider.currentChunkProvider != null) {

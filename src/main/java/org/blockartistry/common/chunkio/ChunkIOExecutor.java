@@ -11,8 +11,8 @@ import net.minecraftforge.common.util.AsynchronousExecutor;
 public class ChunkIOExecutor {
 	
 	// Adjust from Forges defaults
-    private static final int BASE_THREADS = Math.max(1, Runtime.getRuntime().availableProcessors() / 3);
-    private static final int PLAYERS_PER_THREAD = 10;
+    public static final int BASE_THREADS = Math.max(1, Runtime.getRuntime().availableProcessors() / 3);
+    public static final int PLAYERS_PER_THREAD = 10;
 
     private static final AsynchronousExecutor<QueuedChunk, Chunk, Runnable, RuntimeException> instance = new AsynchronousExecutor<QueuedChunk, net.minecraft.world.chunk.Chunk, Runnable, RuntimeException>(new ChunkIOProvider(), BASE_THREADS);
 

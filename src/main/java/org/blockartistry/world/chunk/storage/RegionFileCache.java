@@ -38,6 +38,8 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 
+import net.minecraft.world.ChunkCoordIntPair;
+
 /**
  * Replaces Minecraft's RegionFileCache. It improves on Minecraft's
  * implementation in the following ways:
@@ -76,38 +78,28 @@ public class RegionFileCache {
 	// for the region file can be considered immutable, and the coordinates
 	// are primitives. Most efficient if the save directory is an interned
 	// string.
-	private static final class RegionFileKey {
+	private static final class RegionFileKey extends ChunkCoordIntPair {
 
-		public final int chunkX;
-		public final int chunkZ;
 		public final String dir;
 
 		public RegionFileKey(final String dir, final int regionX, final int regionZ) {
-			this.chunkX = regionX;
-			this.chunkZ = regionZ;
+			super(regionX, regionZ);
 			this.dir = dir;
 		}
 
 		@Override
 		public int hashCode() {
-			final int i = 1664525 * this.chunkX + 1013904223;
-			final int j = 1664525 * (this.chunkZ ^ -559038737) + 1013904223;
-			return i ^ j;
+			return super.hashCode() ^ this.dir.hashCode();
 		}
-
+		
 		@Override
 		public boolean equals(final Object anObj) {
-			if (this == anObj)
-				return true;
-
-			final RegionFileKey obj = (RegionFileKey) anObj;
-			return chunkX == obj.chunkX && chunkZ == obj.chunkZ && dir.equals(obj.dir);
+			return super.equals(anObj) && this.dir.equals(((RegionFileKey)anObj).dir);
 		}
 
 		@Override
 		public String toString() {
-			return new StringBuilder().append(dir).append('[').append(chunkX).append(',').append(chunkZ).append(']')
-					.toString();
+			return this.dir + super.toString();
 		}
 	}
 
@@ -119,8 +111,8 @@ public class RegionFileCache {
 		public RegionFile load(RegionFileKey key) throws Exception {
 			final File file = new File(key.dir, "region");
 			file.mkdirs();
-			final File file1 = new File(file, new StringBuilder(64).append("r.").append(key.chunkX).append('.')
-					.append(key.chunkZ).append(RegionFile.REGION_FILE_EXTENSION).toString());
+			final File file1 = new File(file, new StringBuilder(64).append("r.").append(key.chunkXPos).append('.')
+					.append(key.chunkZPos).append(RegionFile.REGION_FILE_EXTENSION).toString());
 			logger.debug("Loading '" + key.toString() + "'");
 			return new RegionFile(file1);
 		}
