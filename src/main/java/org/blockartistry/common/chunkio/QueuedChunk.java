@@ -1,14 +1,20 @@
 package org.blockartistry.common.chunkio;
 
+import org.blockartistry.world.gen.ChunkProviderServer;
+
+import net.minecraft.world.World;
+import net.minecraft.world.chunk.storage.AnvilChunkLoader;
+//import net.minecraft.world.gen.ChunkProviderServer;
+
 class QueuedChunk {
     final int x;
     final int z;
-    final net.minecraft.world.chunk.storage.AnvilChunkLoader loader;
-    final net.minecraft.world.World world;
-    final net.minecraft.world.gen.ChunkProviderServer provider;
+    final AnvilChunkLoader loader;
+    final World world;
+    final ChunkProviderServer provider;
     net.minecraft.nbt.NBTTagCompound compound;
 
-    public QueuedChunk(int x, int z, net.minecraft.world.chunk.storage.AnvilChunkLoader loader, net.minecraft.world.World world, net.minecraft.world.gen.ChunkProviderServer provider) {
+    public QueuedChunk(int x, int z, AnvilChunkLoader loader, World world, ChunkProviderServer provider) {
         this.x = x;
         this.z = z;
         this.loader = loader;

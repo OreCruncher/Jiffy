@@ -70,6 +70,9 @@ public class Transformer implements IClassTransformer {
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase", "world.storage.ThreadedFileIOBase");
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperChunkCoordIO", "world.storage.ThreadedFileIOBase$WrapperChunkCoordIO");
+
+		targets.put("net.minecraft.world.gen.ChunkProviderServer", "world.gen.ChunkProviderServer");
+		targets.put("ms", "world.gen.ChunkProviderServer");
 		
 		// Forge classes
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
@@ -89,6 +92,7 @@ public class Transformer implements IClassTransformer {
 		targets.put("azs", "world.storage.IThreadedFileIO");
 		targets.put("aqk", "world.chunk.storage.AnvilChunkLoader");
 		targets.put("aqk$ChunkFlush", "world.chunk.storage.AnvilChunkLoader$ChunkFlush");
+		targets.put("ms", "world.gen.ChunkProviderServer");
 
 		// Obsfucation mapping - yay obsfucation!
 		// RegionFileCache
