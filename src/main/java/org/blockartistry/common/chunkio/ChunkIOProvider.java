@@ -3,8 +3,7 @@ package org.blockartistry.common.chunkio;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.blockartistry.world.gen.ChunkProviderServer;
-
+import net.minecraft.world.ChunkCoordIntPair;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.storage.AnvilChunkLoader;
 import net.minecraftforge.common.MinecraftForge;
@@ -42,21 +41,18 @@ class ChunkIOProvider implements
 			return;
 		}
 
-		queuedChunk.loader.loadEntities(queuedChunk.world, queuedChunk.compound.getCompoundTag("Level"), chunk);
-		MinecraftForge.EVENT_BUS.post(new ChunkDataEvent.Load(chunk, queuedChunk.compound)); // Don't
-																								// call
-																								// ChunkDataEvent.Load
-																								// async
-		chunk.lastSaveTime = queuedChunk.provider.worldObj.getTotalWorldTime();
-		queuedChunk.provider.cache.add(ChunkProviderServer.toLong(queuedChunk.x, queuedChunk.z), chunk);
-		queuedChunk.provider.loadedChunks.add(chunk);
-		chunk.onChunkLoad();
+        queuedChunk.loader.loadEntities(queuedChunk.world, queuedChunk.compound.getCompoundTag("Level"), chunk);
+        MinecraftForge.EVENT_BUS.post(new ChunkDataEvent.Load(chunk, queuedChunk.compound)); // Don't call ChunkDataEvent.Load async
+        chunk.lastSaveTime = queuedChunk.provider.worldObj.getTotalWorldTime();
+        queuedChunk.provider.loadedChunkHashMap.add(ChunkCoordIntPair.chunkXZ2Int(queuedChunk.x, queuedChunk.z), chunk);
+        queuedChunk.provider.loadedChunks.add(chunk);
+        chunk.onChunkLoad();
 
-		if (queuedChunk.provider.currentChunkProvider != null) {
-			queuedChunk.provider.currentChunkProvider.recreateStructures(queuedChunk.x, queuedChunk.z);
-		}
+        if (queuedChunk.provider.currentChunkProvider != null) {
+            queuedChunk.provider.currentChunkProvider.recreateStructures(queuedChunk.x, queuedChunk.z);
+        }
 
-		chunk.populateChunk(queuedChunk.provider, queuedChunk.provider, queuedChunk.x, queuedChunk.z);
+        chunk.populateChunk(queuedChunk.provider, queuedChunk.provider, queuedChunk.x, queuedChunk.z);
 	}
 
 	public void callStage3(QueuedChunk queuedChunk, net.minecraft.world.chunk.Chunk chunk, Runnable runnable)

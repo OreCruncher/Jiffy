@@ -23,10 +23,12 @@
 
 package org.blockartistry.world.gen;
 
+import com.google.common.collect.Lists;
 import cpw.mods.fml.common.registry.GameRegistry;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,27 +58,28 @@ import org.blockartistry.common.chunkio.ChunkIOExecutor;
 
 public class ChunkProviderServer implements IChunkProvider {
 	private static final Logger logger = LogManager.getLogger();
+	/**
+	 * used by unload100OldestChunks to iterate the loadedChunkHashMap for
+	 * unload (underlying assumption, first in, first out)
+	 */
+	private Set<Long> chunksToUnload = Collections.newSetFromMap(new ConcurrentHashMap<Long, Boolean>());
+	private Chunk defaultEmptyChunk;
+	public IChunkProvider currentChunkProvider;
+	public IChunkLoader currentChunkLoader;
+	/**
+	 * if this is false, the defaultEmptyChunk will be returned by the provider
+	 */
+	public boolean loadChunkOnProvideRequest = true;
+	public LongHashMap loadedChunkHashMap = new LongHashMap();
+	public List<Chunk> loadedChunks = new ArrayList<Chunk>();
+	public WorldServer worldObj;
+	private Set<Long> loadingChunks = com.google.common.collect.Sets.newHashSet();
 	@SuppressWarnings("unused")
 	private static final String __OBFID = "CL_00001436";
 
-	private final Chunk defaultEmptyChunk;
-	public final IChunkProvider currentChunkProvider;
-	public final IChunkLoader currentChunkLoader;
-
-	public boolean loadChunkOnProvideRequest = true;
-	public final WorldServer worldObj;
-	
-	private final Set<Long> chunksToUnload = Collections.newSetFromMap(new ConcurrentHashMap<Long, Boolean>());
-	private final Set<Long> loadingChunks = com.google.common.collect.Sets.newHashSet();
-	public final LongHashMap cache = new LongHashMap();
-	public final List<Chunk> loadedChunks = new ArrayList<Chunk>();
 	private final boolean worryAboutSpawn;
 
-	public static long toLong(final int chunkX, final int chunkZ) {
-		return ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ);
-	}
-	
-	public ChunkProviderServer(final WorldServer world, final IChunkLoader loader, final IChunkProvider provider) {
+	public ChunkProviderServer(WorldServer world, IChunkLoader loader, IChunkProvider provider) {
 		this.defaultEmptyChunk = new EmptyChunk(world, 0, 0);
 		this.worldObj = world;
 		this.currentChunkLoader = loader;
@@ -85,13 +88,14 @@ public class ChunkProviderServer implements IChunkProvider {
 		// Do a static calc to speed things up if possible
 		this.worryAboutSpawn = this.worldObj.provider.canRespawnHere()
 				&& DimensionManager.shouldLoadSpawn(this.worldObj.provider.dimensionId);
+
 	}
 
 	/**
 	 * Checks to see if a chunk exists at x, y
 	 */
-	public boolean chunkExists(final int chunkX, final int chunkZ) {
-		return this.cache.containsItem(toLong(chunkX, chunkZ));
+	public boolean chunkExists(int chunkX, int chunkZ) {
+		return this.loadedChunkHashMap.containsItem(ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ));
 	}
 
 	public List<Chunk> func_152380_a() {
@@ -103,9 +107,9 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * point, or if the center of the chunk is outside 200 blocks (x or z) of
 	 * the spawn
 	 */
-	private final static short RANGE = 128;
+	private static final int RANGE = 128;
 
-	public void unloadChunksIfNotNearSpawn(final int chunkX, final int chunkZ) {
+	public void unloadChunksIfNotNearSpawn(int chunkX, int chunkZ) {
 		if (this.worryAboutSpawn) {
 			final ChunkCoordinates chunkcoordinates = this.worldObj.getSpawnPoint();
 			final int k = chunkX * 16 + 8 - chunkcoordinates.posX;
@@ -117,44 +121,48 @@ public class ChunkProviderServer implements IChunkProvider {
 		}
 
 		// Toss on another log...
-		this.chunksToUnload.add(toLong(chunkX, chunkZ));
+		this.chunksToUnload.add(ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ));
 	}
 
 	/**
 	 * marks all chunks for unload, ignoring those near the spawn
 	 */
 	public void unloadAllChunks() {
-		for (final Chunk chunk : func_152380_a())
+		Iterator<Chunk> iterator = this.loadedChunks.iterator();
+
+		while (iterator.hasNext()) {
+			Chunk chunk = (Chunk) iterator.next();
 			this.unloadChunksIfNotNearSpawn(chunk.xPosition, chunk.zPosition);
+		}
 	}
 
 	/**
 	 * loads or generates the chunk at the chunk location specified
 	 */
-	public Chunk loadChunk(final int chunkX, final int chunkZ) {
+	public Chunk loadChunk(int chunkX, int chunkZ) {
 		return loadChunk(chunkX, chunkZ, null);
 	}
 
-	public Chunk loadChunk(final int chunkX, final int chunkZ, final Runnable runnable) {
-		final long key = toLong(chunkX, chunkZ);
-		this.chunksToUnload.remove(key);
-		Chunk chunk = (Chunk) this.cache.getValueByKey(key);
+	public Chunk loadChunk(int chunkX, int chunkZ, Runnable runnable) {
+		long key = ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ);
+		this.chunksToUnload.remove(Long.valueOf(key));
+		Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(key);
+		AnvilChunkLoader loader = null;
 
-		if (chunk == null) {
-			final AnvilChunkLoader loader = (this.currentChunkLoader instanceof AnvilChunkLoader)
-					? (AnvilChunkLoader) this.currentChunkLoader : null;
+		if (this.currentChunkLoader instanceof AnvilChunkLoader) {
+			loader = (AnvilChunkLoader) this.currentChunkLoader;
+		}
 
-			// We can only use the queue for already generated chunks
-			if (loader != null && loader.chunkExists(this.worldObj, chunkX, chunkZ)) {
-				if (runnable != null) {
-					ChunkIOExecutor.queueChunkLoad(this.worldObj, loader, this, chunkX, chunkZ, runnable);
-					return null;
-				} else {
-					chunk = ChunkIOExecutor.syncChunkLoad(this.worldObj, loader, this, chunkX, chunkZ);
-				}
+		// We can only use the queue for already generated chunks
+		if (chunk == null && loader != null && loader.chunkExists(this.worldObj, chunkX, chunkZ)) {
+			if (runnable != null) {
+				ChunkIOExecutor.queueChunkLoad(this.worldObj, loader, this, chunkX, chunkZ, runnable);
+				return null;
 			} else {
-				chunk = this.originalLoadChunk(chunkX, chunkZ);
+				chunk = ChunkIOExecutor.syncChunkLoad(this.worldObj, loader, this, chunkX, chunkZ);
 			}
+		} else if (chunk == null) {
+			chunk = this.originalLoadChunk(chunkX, chunkZ);
 		}
 
 		// If we didn't load the chunk async and have a callback run it now
@@ -162,19 +170,16 @@ public class ChunkProviderServer implements IChunkProvider {
 			runnable.run();
 		}
 
-		if(chunk == null) {
-			logger.error("Chunk is null?!?!?!?");
-		}
 		return chunk;
 	}
 
-	public Chunk originalLoadChunk(final int chunkX, final int chunkZ) {
-		final long key = toLong(chunkX, chunkZ);
-		this.chunksToUnload.remove(key);
-		Chunk chunk = (Chunk) this.cache.getValueByKey(key);
+	public Chunk originalLoadChunk(int chunkX, int chunkZ) {
+		long key = ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ);
+		this.chunksToUnload.remove(Long.valueOf(key));
+		Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(key);
 
 		if (chunk == null) {
-			boolean added = this.loadingChunks.add(key);
+			boolean added = loadingChunks.add(key);
 			if (!added) {
 				cpw.mods.fml.common.FMLLog.bigWarning(
 						"There is an attempt to load a chunk (%d,%d) in dimension %d that is already being loaded. This will cause weird chunk breakages.",
@@ -191,27 +196,22 @@ public class ChunkProviderServer implements IChunkProvider {
 				} else {
 					try {
 						chunk = this.currentChunkProvider.provideChunk(chunkX, chunkZ);
-					} catch (final Throwable throwable) {
+					} catch (Throwable throwable) {
 						CrashReport crashreport = CrashReport.makeCrashReport(throwable,
 								"Exception generating new chunk");
 						CrashReportCategory crashreportcategory = crashreport.makeCategory("Chunk to be generated");
 						crashreportcategory.addCrashSection("Location", String.format("%d,%d",
 								new Object[] { Integer.valueOf(chunkX), Integer.valueOf(chunkZ) }));
-						crashreportcategory.addCrashSection("Position hash",
-								ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ));
+						crashreportcategory.addCrashSection("Position hash", Long.valueOf(key));
 						crashreportcategory.addCrashSection("Generator", this.currentChunkProvider.makeString());
 						throw new ReportedException(crashreport);
 					}
 				}
 			}
-			
-			if(chunk == null) {
-				logger.error("originalLoadChunk(): obtained null chunk?");
-			}
 
-			this.cache.add(key, chunk);
+			this.loadedChunkHashMap.add(key, chunk);
 			this.loadedChunks.add(chunk);
-			this.loadingChunks.remove(key);
+			loadingChunks.remove(key);
 			chunk.onChunkLoad();
 			chunk.populateChunk(this, this, chunkX, chunkZ);
 		}
@@ -224,8 +224,8 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * will generates all the blocks for the specified chunk from the map seed
 	 * and chunk seed
 	 */
-	public Chunk provideChunk(final int chunkX, final int chunkZ) {
-		final Chunk chunk = (Chunk) this.cache.getValueByKey(toLong(chunkX, chunkZ));
+	public Chunk provideChunk(int chunkX, int chunkZ) {
+		Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ));
 		return chunk == null ? (!this.worldObj.findingSpawnPoint && !this.loadChunkOnProvideRequest
 				? this.defaultEmptyChunk : this.loadChunk(chunkX, chunkZ)) : chunk;
 	}
@@ -234,32 +234,32 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * used by loadChunk, but catches any exceptions if the load fails.
 	 */
 	private Chunk safeLoadChunk(int chunkX, int chunkZ) {
-		if (this.currentChunkLoader == null)
+		if (this.currentChunkLoader == null) {
 			return null;
+		} else {
+			try {
+				Chunk chunk = this.currentChunkLoader.loadChunk(this.worldObj, chunkX, chunkZ);
 
-		try {
-			final Chunk chunk = this.currentChunkLoader.loadChunk(this.worldObj, chunkX, chunkZ);
+				if (chunk != null) {
+					chunk.lastSaveTime = this.worldObj.getTotalWorldTime();
 
-			if (chunk != null) {
-				chunk.lastSaveTime = this.worldObj.getTotalWorldTime();
-
-				if (this.currentChunkProvider != null) {
-					this.currentChunkProvider.recreateStructures(chunkX, chunkZ);
+					if (this.currentChunkProvider != null) {
+						this.currentChunkProvider.recreateStructures(chunkX, chunkZ);
+					}
 				}
+
+				return chunk;
+			} catch (Exception exception) {
+				logger.error("Couldn\'t load chunk", exception);
+				return null;
 			}
-
-			return chunk;
-		} catch (Exception exception) {
-			logger.error("Couldn\'t load chunk", exception);
 		}
-
-		return null;
 	}
 
 	/**
 	 * used by saveChunks, but catches any exceptions if the save fails.
 	 */
-	private void safeSaveExtraChunkData(final Chunk chunk) {
+	private void safeSaveExtraChunkData(Chunk chunk) {
 		if (this.currentChunkLoader != null) {
 			try {
 				this.currentChunkLoader.saveExtraChunkData(this.worldObj, chunk);
@@ -272,7 +272,7 @@ public class ChunkProviderServer implements IChunkProvider {
 	/**
 	 * used by saveChunks, but catches any exceptions if the save fails.
 	 */
-	private void safeSaveChunk(final Chunk chunk) {
+	private void safeSaveChunk(Chunk chunk) {
 		if (this.currentChunkLoader != null) {
 			try {
 				chunk.lastSaveTime = this.worldObj.getTotalWorldTime();
@@ -289,8 +289,8 @@ public class ChunkProviderServer implements IChunkProvider {
 	/**
 	 * Populates chunk with ores etc etc
 	 */
-	public void populate(final IChunkProvider provider, final int chunkX, final int chunkZ) {
-		final Chunk chunk = this.provideChunk(chunkX, chunkZ);
+	public void populate(IChunkProvider provider, int chunkX, int chunkZ) {
+		Chunk chunk = this.provideChunk(chunkX, chunkZ);
 
 		if (!chunk.isTerrainPopulated) {
 			chunk.func_150809_p();
@@ -308,11 +308,13 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * passed false, save up to two chunks. Return true if all chunks have been
 	 * saved.
 	 */
-	private final static int SAVE_LIMIT = 25;
+	public boolean saveChunks(boolean saveAll, IProgressUpdate notUsed) {
+		int i = 0;
+		ArrayList<Chunk> arraylist = Lists.newArrayList(this.loadedChunks);
 
-	public boolean saveChunks(final boolean saveAll, final IProgressUpdate notUsed) {
-		int throttle = 0;
-		for (final Chunk chunk : func_152380_a()) {
+		for (int j = 0; j < arraylist.size(); ++j) {
+			Chunk chunk = (Chunk) arraylist.get(j);
+
 			if (saveAll) {
 				this.safeSaveExtraChunkData(chunk);
 			}
@@ -320,8 +322,9 @@ public class ChunkProviderServer implements IChunkProvider {
 			if (chunk.needsSaving(saveAll)) {
 				this.safeSaveChunk(chunk);
 				chunk.isModified = false;
+				++i;
 
-				if (!saveAll && ++throttle == SAVE_LIMIT) {
+				if (i == 24 && !saveAll) {
 					return false;
 				}
 			}
@@ -348,37 +351,35 @@ public class ChunkProviderServer implements IChunkProvider {
 
 	public boolean unloadQueuedChunks() {
 		if (!this.worldObj.levelSaving) {
-
-			for (final ChunkCoordIntPair forced : this.worldObj.getPersistentChunks().keySet())
-				this.chunksToUnload.remove(toLong(forced.chunkXPos, forced.chunkZPos));
+			for (ChunkCoordIntPair forced : this.worldObj.getPersistentChunks().keySet()) {
+				this.chunksToUnload.remove(ChunkCoordIntPair.chunkXZ2Int(forced.chunkXPos, forced.chunkZPos));
+			}
 
 			int throttle = 0;
 			while (!this.chunksToUnload.isEmpty() && throttle < UNLOAD_LIMIT) {
-				final long key = this.chunksToUnload.iterator().next();
-				final Chunk chunk = (Chunk) this.cache.getValueByKey(key);
+				Long olong = (Long) this.chunksToUnload.iterator().next();
+				Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(olong.longValue());
 
 				if (chunk != null) {
 					chunk.onChunkUnload();
-					// TODO: Need to find out...
-					// Original code did a blind save
-					// Not sure if that is really needed...
+					// TODO: Does it always have to save regardless?
 					if (chunk.needsSaving(true)) {
 						throttle++;
 						this.safeSaveChunk(chunk);
 						this.safeSaveExtraChunkData(chunk);
 					}
-					this.cache.remove(key);
 					this.loadedChunks.remove(chunk);
-					ForgeChunkManager.putDormantChunk(key, chunk);
-					if (this.cache.getNumHashElements() == 0
-							&& ForgeChunkManager.getPersistentChunksFor(this.worldObj).size() == 0
+					ForgeChunkManager.putDormantChunk(ChunkCoordIntPair.chunkXZ2Int(chunk.xPosition, chunk.zPosition),
+							chunk);
+					if (loadedChunks.size() == 0 && ForgeChunkManager.getPersistentChunksFor(this.worldObj).size() == 0
 							&& !DimensionManager.shouldLoadSpawn(this.worldObj.provider.dimensionId)) {
 						DimensionManager.unloadWorld(this.worldObj.provider.dimensionId);
-						return this.currentChunkProvider.unloadQueuedChunks();
+						return currentChunkProvider.unloadQueuedChunks();
 					}
 				}
 
-				this.chunksToUnload.remove(key);
+				this.chunksToUnload.remove(olong);
+				this.loadedChunkHashMap.remove(olong.longValue());
 			}
 
 			if (this.currentChunkLoader != null) {
@@ -400,15 +401,15 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * Converts the instance data to a readable string.
 	 */
 	public String makeString() {
-		return "ServerChunkCache: " + getLoadedChunkCount() + " Drop: " + this.chunksToUnload.size();
+		return "ServerChunkCache: " + this.loadedChunkHashMap.getNumHashElements() + " Drop: "
+				+ this.chunksToUnload.size();
 	}
 
 	/**
 	 * Returns a list of creatures of the specified type that can spawn at the
 	 * given location.
 	 */
-	@SuppressWarnings("rawtypes")
-	public List getPossibleCreatures(EnumCreatureType p_73155_1_, int p_73155_2_, int p_73155_3_, int p_73155_4_) {
+	public List<?> getPossibleCreatures(EnumCreatureType p_73155_1_, int p_73155_2_, int p_73155_3_, int p_73155_4_) {
 		return this.currentChunkProvider.getPossibleCreatures(p_73155_1_, p_73155_2_, p_73155_3_, p_73155_4_);
 	}
 
@@ -418,7 +419,7 @@ public class ChunkProviderServer implements IChunkProvider {
 	}
 
 	public int getLoadedChunkCount() {
-		return (int) this.cache.getNumHashElements();
+		return this.loadedChunkHashMap.getNumHashElements();
 	}
 
 	public void recreateStructures(int p_82695_1_, int p_82695_2_) {

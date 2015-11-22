@@ -71,10 +71,8 @@ public class Transformer implements IClassTransformer {
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperChunkCoordIO", "world.storage.ThreadedFileIOBase$WrapperChunkCoordIO");
 
-		targets.put("net.minecraft.world.ChunkCoordIntPair", "world.ChunkCoordIntPair");
-		targets.put("net.minecraft.world.gen.ChunkProviderServer", "world.gen.ChunkProviderServer");
-		targets.put("agu", "world.ChunkCoordIntPair");
-		targets.put("ms", "world.gen.ChunkProviderServer");
+		//targets.put("net.minecraft.world.gen.ChunkProviderServer", "world.gen.ChunkProviderServer");
+		//targets.put("ms", "world.gen.ChunkProviderServer");
 		
 		// Forge classes
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
@@ -124,7 +122,6 @@ public class Transformer implements IClassTransformer {
 		map = new HashMap<String, String>();
 		map.put("writeNextIO()Z", "func_75814_c");
 		obsRemap.put("IThreadedFileIO", map);
-		obsRemap.put("azs", map);
 
 		// AnvilChunkLoader
 		map = new HashMap<String, String>();
@@ -135,6 +132,18 @@ public class Transformer implements IClassTransformer {
 		map.put("chunkSaveLocation", "field_75825_d");
 		obsRemap.put("AnvilChunkLoader", map);
 		
+		// ChunkProviderServer
+		map = new HashMap<String, String>();
+		map.put("safeLoadChunk(II)Lnet/minecraft/world/chunk/Chunk;", "func_73239_e");
+		map.put("unloadChunksIfNotNearSpawn(II)V", "func_73241_b");
+		map.put("safeSaveExtraChunkData(Lnet/minecraft/world/chunk/Chunk;)V", "func_73243_a");
+		map.put("safeSaveChunk(Lnet/minecraft/world/chunk/Chunk;)V", "func_73242_b");
+		map.put("unloadAllChunks()V", "func_73240_a");
+		map.put("currentChunkLoader", "field_73247_e");
+		map.put("loadChunkOnProvideRequest", "field_73250_a"); // FastCraft for some reason...
+		map.put("loadedChunks", "field_73245_g"); // ChickenChunks
+		obsRemap.put("ChunkProviderServer", map);
+
 		/*
 		/////////////////
 		//

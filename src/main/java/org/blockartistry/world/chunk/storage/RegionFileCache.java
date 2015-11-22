@@ -88,11 +88,6 @@ public class RegionFileCache {
 		}
 
 		@Override
-		public int hashCode() {
-			return super.hashCode() ^ this.dir.hashCode();
-		}
-		
-		@Override
 		public boolean equals(final Object anObj) {
 			return super.equals(anObj) && this.dir.equals(((RegionFileKey)anObj).dir);
 		}
