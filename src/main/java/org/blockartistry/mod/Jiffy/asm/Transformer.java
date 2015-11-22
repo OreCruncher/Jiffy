@@ -57,22 +57,24 @@ public class Transformer implements IClassTransformer {
 		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileKey", "world.chunk.storage.RegionFileCache$RegionFileKey");
 
 		targets.put("net.minecraft.world.chunk.storage.RegionFile", "world.chunk.storage.RegionFile");
-		targets.put("net.minecraft.world.chunk.storage.RegionFile$ChunkStreamEviction", "world.chunk.storage.RegionFile$ChunkStreamEviction");
 
 		targets.put("net.minecraft.world.chunk.storage.ChunkBuffer", "world.chunk.storage.ChunkBuffer");
 		targets.put("net.minecraft.world.chunk.storage.ChunkOutputStream", "world.chunk.storage.ChunkOutputStream");
 		targets.put("net.minecraft.world.chunk.storage.ChunkInputStream", "world.chunk.storage.ChunkInputStream");
+		
 		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader", "world.chunk.storage.AnvilChunkLoader");
 		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader$ChunkFlush", "world.chunk.storage.AnvilChunkLoader$ChunkFlush");
+		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader$WriteChunkStream", "world.chunk.storage.AnvilChunkLoader$WriteChunkStream");
+		
 		targets.put("net.minecraft.world.chunk.storage.AttachableByteArrayInputStream",
 				"world.chunk.storage.AttachableByteArrayInputStream");
-		targets.put("net.minecraft.world.storage.IThreadedFileIO", "world.storage.IThreadedFileIO");
+		
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase", "world.storage.ThreadedFileIOBase");
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
-		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperChunkCoordIO", "world.storage.ThreadedFileIOBase$WrapperChunkCoordIO");
+		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$CompletionCallback", "world.storage.ThreadedFileIOBase$CompletionCallback");
 
-		//targets.put("net.minecraft.world.gen.ChunkProviderServer", "world.gen.ChunkProviderServer");
-		//targets.put("ms", "world.gen.ChunkProviderServer");
+		targets.put("net.minecraft.world.gen.ChunkProviderServer", "world.gen.ChunkProviderServer");
+		targets.put("ms", "world.gen.ChunkProviderServer");
 		
 		// Forge classes
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
@@ -84,14 +86,17 @@ public class Transformer implements IClassTransformer {
 		targets.put("aqj$RegionFileLoader", "world.chunk.storage.RegionFileCache$RegionFileLoader");
 		targets.put("aqj$RegionFileEviction", "world.chunk.storage.RegionFileCache$RegionFileEviction");
 		targets.put("aqj$RegionFileKey", "world.chunk.storage.RegionFileCache$RegionFileKey");
+		
 		targets.put("aqh", "world.chunk.storage.RegionFile");
-		targets.put("aqh$ChunkStreamEviction", "world.chunk.storage.RegionFile$ChunkStreamEviction");
+
 		targets.put("azr", "world.storage.ThreadedFileIOBase");
 		targets.put("azr$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
-		targets.put("azr$WrapperChunkCoordIO", "world.storage.ThreadedFileIOBase$WrapperChunkCoordIO");
-		targets.put("azs", "world.storage.IThreadedFileIO");
+		targets.put("azr$CompletionCallback", "world.storage.ThreadedFileIOBase$CompletionCallback");
+		
 		targets.put("aqk", "world.chunk.storage.AnvilChunkLoader");
 		targets.put("aqk$ChunkFlush", "world.chunk.storage.AnvilChunkLoader$ChunkFlush");
+		targets.put("aqk$WriteChunkStream", "world.chunk.storage.AnvilChunkLoader$WriteChunkStream");
+		
 		targets.put("ms", "world.gen.ChunkProviderServer");
 
 		// Obsfucation mapping - yay obsfucation!

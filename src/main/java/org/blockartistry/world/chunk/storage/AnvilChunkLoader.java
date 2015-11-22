@@ -29,6 +29,7 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 
 import net.minecraft.block.Block;
@@ -46,13 +47,13 @@ import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.NibbleArray;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraft.world.chunk.storage.IChunkLoader;
+import net.minecraft.world.storage.IThreadedFileIO;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.world.ChunkDataEvent;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.blockartistry.world.storage.ThreadedFileIOBase;
-import org.blockartistry.world.storage.IThreadedFileIO;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
@@ -64,9 +65,9 @@ import com.google.common.cache.RemovalNotification;
  * Implementation of a new AnvilChunkLoader. The improvements that have been
  * made:
  * 
- * + This implementation uses a Cache rather than an ArrayList().  This
- * allows for highly concurrent access between Minecraft and the underlying
- * IO routines.  The write to disk occurs when an IO thread comes through and
+ * + This implementation uses a Cache rather than an ArrayList(). This allows
+ * for highly concurrent access between Minecraft and the underlying IO
+ * routines. The write to disk occurs when an IO thread comes through and
  * invalidates the cache entry.
  * 
  * + Issue a close() on the ChunkInputStream object when the chunk has been
@@ -91,29 +92,24 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 	// dynamically change while running.
 	protected final String saveDir;
 
-	private static final class ChunkFlush implements RemovalListener<ChunkCoordIntPair, NBTTagCompound> {
-		
-		private final AnvilChunkLoader loader;
-		
-		public ChunkFlush(final AnvilChunkLoader loader) {
-			this.loader = loader;
-		}
-		
+	private final class ChunkFlush implements RemovalListener<ChunkCoordIntPair, NBTTagCompound> {
 		@Override
-		public void onRemoval(RemovalNotification<ChunkCoordIntPair, NBTTagCompound> notification) {
+		public void onRemoval(final RemovalNotification<ChunkCoordIntPair, NBTTagCompound> notification) {
 			try {
-				// Only flush the entry if it was invalidated.  Any entry could be
-				// updated prior to it being written by an IO thread.
-				if(notification.getCause() == RemovalCause.EXPLICIT)
-					loader.writeChunkNBTTags(notification.getKey(), notification.getValue());
-			} catch (Exception e) {
+				// Only flush the entry if it was invalidated. Any entry could
+				// be
+				// updated prior to it being written by an IO thread so we want
+				// to avoid unnecessary writes.
+				if (notification.getCause() == RemovalCause.EXPLICIT)
+					AnvilChunkLoader.this.writeChunkNBTTags(notification.getKey(), notification.getValue());
+			} catch (final Exception e) {
 				e.printStackTrace();
 			}
 		}
 	}
 
 	private final Cache<ChunkCoordIntPair, NBTTagCompound> pendingIO = CacheBuilder.newBuilder()
-						.removalListener(new ChunkFlush(this)).build();
+			.removalListener(new ChunkFlush()).build();
 
 	public AnvilChunkLoader(final File saveLocation) {
 		this.chunkSaveLocation = saveLocation;
@@ -143,19 +139,20 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		return null;
 	}
 
-	public Object[] loadChunk__Async(final World world, final int chunkX, final int chunkZ) throws IOException, ExecutionException {
+	public Object[] loadChunk__Async(final World world, final int chunkX, final int chunkZ)
+			throws IOException, ExecutionException {
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
 		NBTTagCompound nbt = pendingIO.getIfPresent(coords);
 
 		if (nbt == null) {
 			DataInputStream stream = null;
-			
+
 			try {
 				stream = RegionFileCache.getChunkInputStream(saveDir, chunkX, chunkZ);
-			} catch(final Exception ex) {
+			} catch (final Exception ex) {
 				ex.printStackTrace();
 			}
-			
+
 			if (stream == null) {
 				return null;
 			}
@@ -211,9 +208,27 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		return new Object[] { chunk, nbt };
 	}
 
+	private class WriteChunkStream implements Callable<Void> {
+
+		private final ChunkCoordIntPair chunkCoords;
+
+		public WriteChunkStream(final ChunkCoordIntPair coords) {
+			this.chunkCoords = coords;
+		}
+
+		@Override
+		public Void call() throws Exception {
+			// A simple invalidate will cause the eviction routine
+			// to kick in for the entry. It is what actually does the
+			// write to disk.
+			AnvilChunkLoader.this.pendingIO.invalidate(chunkCoords);
+			return null;
+		}
+
+	}
+
 	public void saveChunk(final World world, final Chunk chunk) throws MinecraftException, IOException {
 		try {
-
 			final NBTTagCompound nbt1 = new NBTTagCompound();
 			final NBTTagCompound nbt2 = new NBTTagCompound();
 			nbt1.setTag("Level", nbt2);
@@ -228,22 +243,12 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 			// up an IO request.
 			final ChunkCoordIntPair coords = chunk.getChunkCoordIntPair();
 			pendingIO.put(coords, nbt1);
-
-			ThreadedFileIOBase.threadedIOInstance.queueIO(this, coords);
-
+			ThreadedFileIOBase.getThreadedIOInstance().queue(new WriteChunkStream(coords));
 		} catch (final Exception exception) {
 			exception.printStackTrace();
 		}
 	}
 
-	public boolean writeNextIO(final ChunkCoordIntPair chunkCoords) {
-		// A simple invalidate will cause the eviction routine
-		// to kick in for the entry.  It is what actually does the
-		// write to disk.
-		pendingIO.invalidate(chunkCoords);
-		return false;
-	}
-	
 	public boolean writeNextIO() {
 		// Using the coordinate version
 		return false;

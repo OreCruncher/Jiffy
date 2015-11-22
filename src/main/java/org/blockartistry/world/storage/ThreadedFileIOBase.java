@@ -28,13 +28,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
-import java.util.concurrent.ExecutorService;
+import net.minecraft.world.storage.IThreadedFileIO;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-
-import net.minecraft.world.ChunkCoordIntPair;
 
 /**
  * Replacement ThreadedFileIOBase. It improves on the Vanilla version by:
@@ -47,70 +55,40 @@ import net.minecraft.world.ChunkCoordIntPair;
  * 
  * + Simple AtomicInteger for tracking work that is being performed.
  *
- * + Doesn't have the strange behavior of leaving a task in the queue when it is
- * being executed. Tasks are removed and it is up to application logic to put
- * the appropriate items into the queue for servicing. (This works with the
- * AnvilChunkLoader code.)
- * 
+ * + Uses Java's ExecutorService patterns and futures.
+ *  
  */
 public class ThreadedFileIOBase {
 
 	private static final Logger logger = LogManager.getLogger("ThreadedFileIOBase");
 
-	// Threads number about half the processors available to the JVM
+	// Threads number about a third the processors available to the JVM
 	private final static int THREAD_COUNT = Math.max(1, Runtime.getRuntime().availableProcessors() / 3);
 	private final static AtomicInteger outstandingTasks = new AtomicInteger();
-	private final static ExecutorService pool;
+	private final static ListeningExecutorService pool;
 	public final static ThreadedFileIOBase threadedIOInstance;
 
 	static {
-
 		final ThreadFactory factory = new ThreadFactoryBuilder().setNameFormat("Storage #%d").build();
-		pool = Executors.newFixedThreadPool(THREAD_COUNT, factory);
+		pool = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(THREAD_COUNT, factory));
 		threadedIOInstance = new ThreadedFileIOBase();
 		logger.info("Created threadpool with " + THREAD_COUNT + " threads");
 	}
 
-	private static class WrapperIThreadedFileIO implements Runnable {
+	// Provided for compatibility with other loaders
+	// that want to use the writeNextIO() callback.
+	private static class WrapperIThreadedFileIO implements Callable<Void> {
 
 		private final IThreadedFileIO task;
-		private final AtomicInteger counter;
 
-		public WrapperIThreadedFileIO(final IThreadedFileIO task, final AtomicInteger counter) {
+		public WrapperIThreadedFileIO(final IThreadedFileIO task) {
 			this.task = task;
-			this.counter = counter;
 		}
 
 		@Override
-		public void run() {
-			try {
-				this.task.writeNextIO();
-			} finally {
-				this.counter.decrementAndGet();
-			}
-		}
-	}
-
-	private static class WrapperChunkCoordIO implements Runnable {
-
-		private final IThreadedFileIO task;
-		private final ChunkCoordIntPair coords;
-		private final AtomicInteger counter;
-
-		public WrapperChunkCoordIO(final IThreadedFileIO task, final ChunkCoordIntPair coords,
-				final AtomicInteger counter) {
-			this.task = task;
-			this.coords = coords;
-			this.counter = counter;
-		}
-
-		@Override
-		public void run() {
-			try {
-				this.task.writeNextIO(this.coords);
-			} finally {
-				this.counter.decrementAndGet();
-			}
+		public Void call() throws Exception {
+			this.task.writeNextIO();
+			return null;
 		}
 	}
 
@@ -121,30 +99,56 @@ public class ThreadedFileIOBase {
 	private ThreadedFileIOBase() {
 	}
 
+	@Deprecated
 	public void queueIO(final IThreadedFileIO task) throws Exception {
-		if (task != null) {
-			outstandingTasks.incrementAndGet();
-			try {
-				pool.submit(new WrapperIThreadedFileIO(task, outstandingTasks));
-			} catch (final Exception ex) {
-				outstandingTasks.decrementAndGet();
-				throw ex;
-			}
+		if (task != null)
+			queue(new WrapperIThreadedFileIO(task));
+	}
+	
+	// Completion callback to ensure that the task counter
+	// is decremented.
+	private static class CompletionCallback implements FutureCallback<Object> {
+		@Override
+		public void onSuccess(final Object result) {
+			outstandingTasks.decrementAndGet();
+		}
+
+		@Override
+		public void onFailure(final Throwable t) {
+			outstandingTasks.decrementAndGet();
 		}
 	}
 
-	public void queueIO(final IThreadedFileIO task, final ChunkCoordIntPair chunkCoords) throws Exception {
-		if (chunkCoords != null) {
-			outstandingTasks.incrementAndGet();
-			try {
-				pool.submit(new WrapperChunkCoordIO(task, chunkCoords, outstandingTasks));
-			} catch (final Exception ex) {
-				outstandingTasks.decrementAndGet();
-				throw ex;
-			}
+	private final static CompletionCallback cc = new CompletionCallback();
+	
+	/**
+	 * Queues a single callable for execution.
+	 */
+	public <T> ListenableFuture<T> queue(final Callable<T> call) throws Exception {
+		outstandingTasks.incrementAndGet();
+		try {
+			final ListenableFuture<T> future = pool.submit(call);
+			Futures.addCallback(future, cc);
+			return future;
+		} catch(final Exception ex) {
+			outstandingTasks.decrementAndGet();
+			throw ex;
 		}
 	}
 
+	/**
+	 * Queues one or more callables for execution.
+	 */
+	public <T> List<ListenableFuture<T>> queue(final Collection<? extends Callable<T>> calls) throws Exception {
+		final List<ListenableFuture<T>> futures = new ArrayList<ListenableFuture<T>>(calls.size());
+		for(final Callable<T> call : calls)
+			futures.add(queue(call));
+		return futures;
+	}
+
+	/**
+	 * Waits for all outstanding tasks to be completed.
+	 */
 	public void waitForFinish() throws InterruptedException {
 		// Wait for the work to drain from the queue
 		while (outstandingTasks.get() != 0)
