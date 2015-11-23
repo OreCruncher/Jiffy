@@ -74,7 +74,9 @@ public class Transformer implements IClassTransformer {
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$CompletionCallback", "world.storage.ThreadedFileIOBase$CompletionCallback");
 
 		targets.put("net.minecraft.world.gen.ChunkProviderServer", "world.gen.ChunkProviderServer");
+		targets.put("net.minecraft.world.gen.ChunkProviderServer$SimpleChunkList", "world.gen.ChunkProviderServer$SimpleChunkList");
 		targets.put("ms", "world.gen.ChunkProviderServer");
+		targets.put("ms$SimpleChunkList", "world.gen.ChunkProviderServer$SimpleChunkList");
 		
 		// Forge classes
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
