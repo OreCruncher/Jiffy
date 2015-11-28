@@ -103,7 +103,7 @@ public class ChunkProviderServer implements IChunkProvider {
 		}
 	}
 
-	// Thing wrapper to make components that consume the 
+	// Thin wrapper to make components that consume the 
 	// loadedChunks field happy.  Not a lot of error checking.
 	// ChunkIOExecutor and Chicken Chunks uses it - not sure
 	// what else.
@@ -174,15 +174,16 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * point, or if the center of the chunk is outside 200 blocks (x or z) of
 	 * the spawn
 	 */
-	private static final int RANGE = 128;
+	private static final int RANGE_CHUNKS = 32;
 
-	public void unloadChunksIfNotNearSpawn(int chunkX, int chunkZ) {
+	public void unloadChunksIfNotNearSpawn(final int chunkX, final int chunkZ) {
 		if (this.worryAboutSpawn) {
+			// Chunk distance, not block distance.
 			final ChunkCoordinates chunkcoordinates = this.worldObj.getSpawnPoint();
-			final int k = chunkX * 16 + 8 - chunkcoordinates.posX;
-			if (k >= -RANGE && k <= RANGE) {
-				final int l = chunkZ * 16 + 8 - chunkcoordinates.posZ;
-				if (l >= -RANGE && l <= RANGE)
+			int t = chunkX - (chunkcoordinates.posX >> 4);
+			if (t >= -RANGE_CHUNKS && t <= RANGE_CHUNKS) {
+				t = chunkZ - (chunkcoordinates.posZ >> 4);
+				if (t >= -RANGE_CHUNKS && t <= RANGE_CHUNKS)
 					return;
 			}
 		}
@@ -195,8 +196,10 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * marks all chunks for unload, ignoring those near the spawn
 	 */
 	public void unloadAllChunks() {
-		for (int i = 0; i < this.newLoadedChunk; i++)
-			unloadChunksIfNotNearSpawn(this.theLoadedChunks[i].xPosition, this.theLoadedChunks[i].zPosition);
+		for (int i = 0; i < this.newLoadedChunk; i++) {
+			final Chunk chunk = this.theLoadedChunks[i];
+			unloadChunksIfNotNearSpawn(chunk.xPosition, chunk.zPosition);
+		}
 	}
 
 	/**
@@ -287,8 +290,17 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * will generates all the blocks for the specified chunk from the map seed
 	 * and chunk seed
 	 */
+	//int count = 0;
+	//long time = 0;
 	public Chunk provideChunk(int chunkX, int chunkZ) {
+		//long start = System.nanoTime();
 		Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ));
+		//time += System.nanoTime() - start;
+		//if((++count % 100000000) == 0) {
+			//logger.info("TIME: " + (time/count));
+			//count = 0;
+			//time = 0;
+		//}
 		return chunk == null ? (!this.worldObj.findingSpawnPoint && !this.loadChunkOnProvideRequest
 				? this.defaultEmptyChunk : this.loadChunk(chunkX, chunkZ)) : chunk;
 	}
@@ -400,8 +412,8 @@ public class ChunkProviderServer implements IChunkProvider {
 		}
 	}
 
-	private static final int UNLOAD_SAVE_LIMIT = 100;
-	private static boolean ALWAYS_SAVE = true;
+	private static final int UNLOAD_SAVE_LIMIT = 150;
+	private static boolean ALWAYS_SAVE = false;
 
 	/**
 	 * Unloads chunks that are marked to be unloaded. This is not guaranteed to

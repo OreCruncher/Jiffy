@@ -45,39 +45,48 @@ public class Transformer implements IClassTransformer {
 
 	// Mapping between Minecraft classes and the class to replace them with
 	private static Map<String, String> targets = new HashMap<String, String>();
-	
+
 	// Obsfucation mapping of methods to SRG
 	private static Map<String, Map<String, String>> obsRemap = new HashMap<String, Map<String, String>>();
-	
+
 	static {
 
 		targets.put("net.minecraft.world.chunk.storage.RegionFileCache", "world.chunk.storage.RegionFileCache");
-		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileLoader", "world.chunk.storage.RegionFileCache$RegionFileLoader");
-		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileEviction", "world.chunk.storage.RegionFileCache$RegionFileEviction");
-		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileKey", "world.chunk.storage.RegionFileCache$RegionFileKey");
+		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileLoader",
+				"world.chunk.storage.RegionFileCache$RegionFileLoader");
+		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileEviction",
+				"world.chunk.storage.RegionFileCache$RegionFileEviction");
+		targets.put("net.minecraft.world.chunk.storage.RegionFileCache$RegionFileKey",
+				"world.chunk.storage.RegionFileCache$RegionFileKey");
 
 		targets.put("net.minecraft.world.chunk.storage.RegionFile", "world.chunk.storage.RegionFile");
 
 		targets.put("net.minecraft.world.chunk.storage.ChunkBuffer", "world.chunk.storage.ChunkBuffer");
 		targets.put("net.minecraft.world.chunk.storage.ChunkOutputStream", "world.chunk.storage.ChunkOutputStream");
 		targets.put("net.minecraft.world.chunk.storage.ChunkInputStream", "world.chunk.storage.ChunkInputStream");
-		
+
 		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader", "world.chunk.storage.AnvilChunkLoader");
-		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader$ChunkFlush", "world.chunk.storage.AnvilChunkLoader$ChunkFlush");
-		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader$WriteChunkStream", "world.chunk.storage.AnvilChunkLoader$WriteChunkStream");
-		
+		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader$ChunkFlush",
+				"world.chunk.storage.AnvilChunkLoader$ChunkFlush");
+		targets.put("net.minecraft.world.chunk.storage.AnvilChunkLoader$WriteChunkStream",
+				"world.chunk.storage.AnvilChunkLoader$WriteChunkStream");
+
 		targets.put("net.minecraft.world.chunk.storage.AttachableByteArrayInputStream",
 				"world.chunk.storage.AttachableByteArrayInputStream");
-		
+
 		targets.put("net.minecraft.world.storage.ThreadedFileIOBase", "world.storage.ThreadedFileIOBase");
-		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
-		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$CompletionCallback", "world.storage.ThreadedFileIOBase$CompletionCallback");
+		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO",
+				"world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
+		targets.put("net.minecraft.world.storage.ThreadedFileIOBase$CompletionCallback",
+				"world.storage.ThreadedFileIOBase$CompletionCallback");
 
 		targets.put("net.minecraft.world.gen.ChunkProviderServer", "world.gen.ChunkProviderServer");
-		targets.put("net.minecraft.world.gen.ChunkProviderServer$SimpleChunkList", "world.gen.ChunkProviderServer$SimpleChunkList");
-		targets.put("ms", "world.gen.ChunkProviderServer");
-		targets.put("ms$SimpleChunkList", "world.gen.ChunkProviderServer$SimpleChunkList");
-		
+		targets.put("net.minecraft.world.gen.ChunkProviderServer$SimpleChunkList",
+				"world.gen.ChunkProviderServer$SimpleChunkList");
+
+		targets.put("net.minecraft.util.LongHashMap", "util.LongHashMap");
+		targets.put("net.minecraft.util.LongHashMap$Entry", "util.LongHashMap$Entry");
+
 		// Forge classes
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOProvider", "common.chunkio.ChunkIOProvider");
@@ -88,18 +97,22 @@ public class Transformer implements IClassTransformer {
 		targets.put("aqj$RegionFileLoader", "world.chunk.storage.RegionFileCache$RegionFileLoader");
 		targets.put("aqj$RegionFileEviction", "world.chunk.storage.RegionFileCache$RegionFileEviction");
 		targets.put("aqj$RegionFileKey", "world.chunk.storage.RegionFileCache$RegionFileKey");
-		
+
 		targets.put("aqh", "world.chunk.storage.RegionFile");
 
 		targets.put("azr", "world.storage.ThreadedFileIOBase");
 		targets.put("azr$WrapperIThreadedFileIO", "world.storage.ThreadedFileIOBase$WrapperIThreadedFileIO");
 		targets.put("azr$CompletionCallback", "world.storage.ThreadedFileIOBase$CompletionCallback");
-		
+
 		targets.put("aqk", "world.chunk.storage.AnvilChunkLoader");
 		targets.put("aqk$ChunkFlush", "world.chunk.storage.AnvilChunkLoader$ChunkFlush");
 		targets.put("aqk$WriteChunkStream", "world.chunk.storage.AnvilChunkLoader$WriteChunkStream");
-		
+
 		targets.put("ms", "world.gen.ChunkProviderServer");
+		targets.put("ms$SimpleChunkList", "world.gen.ChunkProviderServer$SimpleChunkList");
+
+		targets.put("qd", "util.LongHashMap");
+		targets.put("qe", "util.LongHashMap$Entry");
 
 		// Obsfucation mapping - yay obsfucation!
 		// RegionFileCache
@@ -125,11 +138,6 @@ public class Transformer implements IClassTransformer {
 		map.put("threadedIOInstance", "field_75741_a");
 		obsRemap.put("ThreadedFileIOBase", map);
 
-		// IThreadedFileIO
-		map = new HashMap<String, String>();
-		map.put("writeNextIO()Z", "func_75814_c");
-		obsRemap.put("IThreadedFileIO", map);
-
 		// AnvilChunkLoader
 		map = new HashMap<String, String>();
 		map.put("chunkTick()V", "func_75817_a");
@@ -138,7 +146,7 @@ public class Transformer implements IClassTransformer {
 		map.put("saveChunk(Lnet/minecraft/world/World;Lnet/minecraft/world/chunk/Chunk;)V", "func_75816_a");
 		map.put("chunkSaveLocation", "field_75825_d");
 		obsRemap.put("AnvilChunkLoader", map);
-		
+
 		// ChunkProviderServer
 		map = new HashMap<String, String>();
 		map.put("safeLoadChunk(II)Lnet/minecraft/world/chunk/Chunk;", "func_73239_e");
@@ -147,76 +155,20 @@ public class Transformer implements IClassTransformer {
 		map.put("safeSaveChunk(Lnet/minecraft/world/chunk/Chunk;)V", "func_73242_b");
 		map.put("unloadAllChunks()V", "func_73240_a");
 		map.put("currentChunkLoader", "field_73247_e");
-		map.put("loadChunkOnProvideRequest", "field_73250_a"); // FastCraft for some reason...
+		map.put("loadChunkOnProvideRequest", "field_73250_a"); // FastCraft for
+																// some
+																// reason...
 		map.put("loadedChunks", "field_73245_g"); // ChickenChunks
 		obsRemap.put("ChunkProviderServer", map);
 
-		/*
-		/////////////////
-		//
-		// NBT Classes
-		//
-		/////////////////
-		
-		targets.put("net.minecraft.nbt.NBTHelper", "nbt.NBTHelper");
-		targets.put("net.minecraft.nbt.NBTTagCompound", "nbt.NBTTagCompound");
-		targets.put("net.minecraft.nbt.NBTTagList", "nbt.NBTTagList");
-		
-		targets.put("dh", "nbt.NBTTagCompound");
-		targets.put("dq", "nbt.NBTTagList");
-		
-		// NBTTagCompound
+		// LongHashMap
 		map = new HashMap<String, String>();
-		map.put("getBoolean(Ljava/lang/String;)Z", "func_74767_n");
-		map.put("getByteArray(Ljava/lang/String;)[B", "func_74770_j");
-		map.put("getTagList(Ljava/lang/String;I)Lorg/blockartistry/nbt/NBTTagList;", "func_150295_c");
-		map.put("setIntArray(Ljava/lang/String;[I)V", "func_74783_a");
-		map.put("getTag(Ljava/lang/String;)Lnet/minecraft/nbt/NBTBase;", "func_74781_a");
-		map.put("setByteArray(Ljava/lang/String;[B)V", "func_74773_a");
-		map.put("setTag(Ljava/lang/String;Lnet/minecraft/nbt/NBTBase;)V", "func_74782_a");
-		map.put("getIntArray(Ljava/lang/String;)[I", "func_74759_k");
-		map.put("getFloat(Ljava/lang/String;)F", "func_74760_g");
-		map.put("setString(Ljava/lang/String;Ljava/lang/String;)V", "func_74778_a");
-		map.put("getByte(Ljava/lang/String;)B", "func_74771_c");
-		map.put("getCompoundTag(Ljava/lang/String;)Lorg/blockartistry/nbt/NBTTagCompound;", "func_74775_l");
-		map.put("getString(Ljava/lang/String;)Ljava/lang/String;", "func_74779_i");
-		map.put("getShort(Ljava/lang/String;)S", "func_74765_d");
-		map.put("getLong(Ljava/lang/String;)J", "func_74763_f");
-		map.put("hasKey(Ljava/lang/String;)Z", "func_74764_b");
-		map.put("getDouble(Ljava/lang/String;)D", "func_74769_h");
-		map.put("hasKey(Ljava/lang/String;I)Z", "func_150297_b");
-		map.put("setFloat(Ljava/lang/String;F)V", "func_74776_a");
-		map.put("getInteger(Ljava/lang/String;)I", "func_74762_e");
-		map.put("setInteger(Ljava/lang/String;I)V", "func_74768_a");
-		map.put("removeTag(Ljava/lang/String;)V", "func_82580_o");
-		map.put("setLong(Ljava/lang/String;J)V", "func_74772_a");
-		map.put("setByte(Ljava/lang/String;B)V", "func_74774_a");
-		map.put("setBoolean(Ljava/lang/String;Z)V", "func_74757_a");
-		map.put("createCrashReport(Ljava/lang/String;ILjava/lang/ClassCastException;)Lnet/minecraft/crash/CrashReport;",
-				"func_82581_a");
-		map.put("setDouble(Ljava/lang/String;D)V", "func_74780_a");
-		map.put("hasNoTags()Z", "func_82582_d");
-		map.put("setShort(Ljava/lang/String;S)V", "func_74777_a");
-		map.put("copy()net/minecraft/nbt/NBTBase;", "func_74737_b");
-		map.put("getId()B", "func_74732_a");
-		map.put("write(Ljava/io/DataOutput;)V", "func_74734_a");
-		obsRemap.put("NBTTagCompound", map);
-		obsRemap.put("dh", map);
-
-		// NBTTagList
-		map = new HashMap<String, String>();
-		map.put("getCompoundTagAt(I)Lorg/blockartistry/nbt/NBTTagCompound;", "func_150305_b");
-		map.put("removeTag(I)Lnet/minecraft/nbt/NBTBase;", "func_74744_a");
-		map.put("tagCount()I", "func_74745_c");
-		map.put("appendTag(Lnet/minecraft/nbt/NBTBase;)V", "func_74742_a");
-		map.put("getStringTagAt(I)Ljava/lang/String;", "func_150307_f");
-		map.put("write(Ljava/io/DataOutput;)V", "func_74734_a");
-		map.put("copy()Lnet/minecraft/nbt/NBTBase;", "func_74737_b");
-		map.put("getId()B", "func_74732_a");
-		obsRemap.put("NBTTagList", map);
-		obsRemap.put("dq", map);
-		
-		*/
+		map.put("getNumHashElements()I", "func_76162_a");
+		map.put("add(JLjava/lang/Object;)V", "func_76163_a");
+		map.put("containsItem(J)Z", "func_76161_b");
+		map.put("getValueByKey(J)Ljava/lang/Object;", "func_76164_a");
+		map.put("remove(J)Ljava/lang/Object;", "func_76159_d");
+		obsRemap.put("LongHashMap", map);
 	}
 
 	private byte[] getClassBytes(final String clazz) {
