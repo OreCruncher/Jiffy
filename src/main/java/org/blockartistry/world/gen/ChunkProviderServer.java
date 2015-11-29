@@ -412,8 +412,8 @@ public class ChunkProviderServer implements IChunkProvider {
 		}
 	}
 
-	private static final int UNLOAD_SAVE_LIMIT = 150;
-	private static boolean ALWAYS_SAVE = false;
+	private static final int UNLOAD_SAVE_LIMIT = 300;
+	private static final boolean ALWAYS_SAVE = false;
 
 	/**
 	 * Unloads chunks that are marked to be unloaded. This is not guaranteed to

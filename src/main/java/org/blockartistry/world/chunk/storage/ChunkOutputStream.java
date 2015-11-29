@@ -84,7 +84,7 @@ public class ChunkOutputStream extends DataOutputStream {
 	// Time measurement stuff. Intended to work with
 	// concurrent ChunkBuffer writes in the case of
 	// multiple IO write threads.
-	private static boolean DO_TIMINGS = false;
+	private final static boolean DO_TIMINGS = false;
 	private static Object sync = new Object();
 	private static long bytesWritten;
 	private static long rawBytesWritten;

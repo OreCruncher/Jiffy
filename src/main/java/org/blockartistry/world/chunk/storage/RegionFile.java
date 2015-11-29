@@ -507,7 +507,7 @@ public final class RegionFile {
 		return (b0 << 24) | ((b1 & 0xFF) << 16) | ((b2 & 0xFF) << 8) | (b3 & 0xFF);
 	}
 
-	private boolean outOfBounds(final int regionX, final int regionZ) {
+	private static boolean outOfBounds(final int regionX, final int regionZ) {
 		return regionX < 0 || regionX >= REGION_CHUNK_DIMENSION || regionZ < 0 || regionZ >= REGION_CHUNK_DIMENSION;
 	}
 
