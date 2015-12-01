@@ -261,7 +261,11 @@ public class Transformer implements IClassTransformer {
 				logger.warn("Unable to find classbytes for " + src);
 			}
 		} else if("net.minecraft.util.MathHelper".equals(name) || "qh".equals(name)) {
+			logger.info("Transforming MathHelper...");
 			return transformMathUtils(basicClass);
+		} else if("net.minecraft.block.BlockLeaves".equals(name) || "alt".equals(name)) {
+			logger.info("Transforming BlockLeaves...");
+			return transformBlockLeaves(basicClass);
 		}
 
 		return basicClass;
@@ -296,6 +300,41 @@ public class Transformer implements IClassTransformer {
 				final String sig = "(F)F";
 				m.instructions.add(new MethodInsnNode(INVOKESTATIC, "org/blockartistry/util/MathHelper", targetName[targetId], sig, false));
 				m.instructions.add(new InsnNode(FRETURN));
+			}
+		}
+
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cn.accept(cw);
+		return cw.toByteArray();
+	}
+	
+	private byte[] transformBlockLeaves(final byte[] classBytes) {
+		String names[] = null;
+		
+		if(TransformLoader.runtimeDeobEnabled)
+			names = new String[] { "beginLeavesDecay" };
+		else
+			names = new String[] { "beginLeavesDecay" };
+		
+		final String targetName[] = new String[] { "beginLeavesDecay" };
+		
+		final ClassReader cr = new ClassReader(classBytes);
+		final ClassNode cn = new ClassNode(ASM5);
+		cr.accept(cn, 0);
+
+		for (final MethodNode m : cn.methods) {
+			if(m.name.equals(names[0])) {
+				m.localVariables = null;
+				m.instructions.clear();
+				m.instructions.add(new VarInsnNode(ALOAD, 1));
+				m.instructions.add(new VarInsnNode(ILOAD, 2));
+				m.instructions.add(new VarInsnNode(ILOAD, 3));
+				m.instructions.add(new VarInsnNode(ILOAD, 4));
+				final String sig = "(Lnet/minecraft/world/World;III)V";
+				m.instructions.add(new MethodInsnNode(INVOKESTATIC, "org/blockartistry/block/BlockLeaves", targetName[0], sig, false));
+				m.instructions.add(new InsnNode(RETURN));
+				logger.info("Hooked beginLeavesDecay");
+				break;
 			}
 		}
 
