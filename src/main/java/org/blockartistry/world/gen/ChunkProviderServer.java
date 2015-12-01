@@ -55,28 +55,36 @@ import org.blockartistry.common.chunkio.ChunkIOExecutor;
 public class ChunkProviderServer implements IChunkProvider {
 	private static final Logger logger = LogManager.getLogger();
 
-	private long[] chunksToUnload = new long[1000];
+	// Moving the last element to fill a vacancy created
+	// by a remove is much faster than the ArrayList's
+	// arraycopy shift from the right. The logic in this
+	// class doesn't care about the ordering of elements
+	// in the list - just cares about membership.
+	private long[] chunksToUnload = new long[2000];
 	private int newChunksToUnload = 0;
 
-	private void addToChunksToUnload(final long chunkIdx) {
+	private void addToChunksToUnload(final long chunkId) {
 		if (this.newChunksToUnload == this.chunksToUnload.length) {
 			final long[] newArray = new long[this.chunksToUnload.length + 500];
 			System.arraycopy(this.chunksToUnload, 0, newArray, 0, this.chunksToUnload.length);
 			this.chunksToUnload = newArray;
 		}
-		this.chunksToUnload[this.newChunksToUnload++] = chunkIdx;
+		this.chunksToUnload[this.newChunksToUnload++] = chunkId;
 	}
 
-	private void removeFromChunksToUnload(final long chunkIdx) {
+	private void removeFromChunksToUnload(final long chunkId) {
 		for (int i = 0; i < this.newChunksToUnload; i++) {
-			if (this.chunksToUnload[i] == chunkIdx) {
+			if (this.chunksToUnload[i] == chunkId) {
 				this.chunksToUnload[i] = this.chunksToUnload[--this.newChunksToUnload];
-				break;
+				return;
 			}
 		}
 	}
 
-	private Chunk[] theLoadedChunks = new Chunk[2500];
+	// Similar to chunksToUnload. Also, a given chunk instance is
+	// unique so we can get away with an identity compare rather
+	// than an equals().
+	private Chunk[] theLoadedChunks = new Chunk[4000];
 	private int newLoadedChunk = 0;
 
 	private void addToLoadedChunks(final Chunk chunk) {
@@ -103,8 +111,8 @@ public class ChunkProviderServer implements IChunkProvider {
 		}
 	}
 
-	// Thin wrapper to make components that consume the 
-	// loadedChunks field happy.  Not a lot of error checking.
+	// Thin wrapper to make components that consume the
+	// loadedChunks field happy. Not a lot of error checking.
 	// ChunkIOExecutor and Chicken Chunks uses it - not sure
 	// what else.
 	private class SimpleChunkList extends AbstractList<Chunk> {
@@ -153,7 +161,8 @@ public class ChunkProviderServer implements IChunkProvider {
 		this.currentChunkLoader = loader;
 		this.currentChunkProvider = provider;
 
-		// Do a static calc to speed things up if possible
+		// TODO: Do a static calc to speed things up if possible. Need
+		// to find out if this assumption is safe.
 		this.worryAboutSpawn = this.worldObj.provider.canRespawnHere()
 				&& DimensionManager.shouldLoadSpawn(this.worldObj.provider.dimensionId);
 	}
@@ -174,6 +183,10 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * point, or if the center of the chunk is outside 200 blocks (x or z) of
 	 * the spawn
 	 */
+
+	// Vanilla version does it in blocks, this does it in chunks since
+	// the math is simpler as well as the fact we are talking chunks, not
+	// blocks.
 	private static final int RANGE_CHUNKS = 32;
 
 	public void unloadChunksIfNotNearSpawn(final int chunkX, final int chunkZ) {
@@ -205,12 +218,12 @@ public class ChunkProviderServer implements IChunkProvider {
 	/**
 	 * loads or generates the chunk at the chunk location specified
 	 */
-	public Chunk loadChunk(int chunkX, int chunkZ) {
+	public Chunk loadChunk(final int chunkX, final int chunkZ) {
 		return loadChunk(chunkX, chunkZ, null);
 	}
 
-	public Chunk loadChunk(int chunkX, int chunkZ, Runnable runnable) {
-		long key = ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ);
+	public Chunk loadChunk(final int chunkX, final int chunkZ, final Runnable runnable) {
+		final long key = ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ);
 		removeFromChunksToUnload(key);
 		Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(key);
 		AnvilChunkLoader loader = null;
@@ -239,13 +252,13 @@ public class ChunkProviderServer implements IChunkProvider {
 		return chunk;
 	}
 
-	public Chunk originalLoadChunk(int chunkX, int chunkZ) {
-		long key = ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ);
+	public Chunk originalLoadChunk(final int chunkX, final int chunkZ) {
+		final long key = ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ);
 		removeFromChunksToUnload(key);
 		Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(key);
 
 		if (chunk == null) {
-			boolean added = loadingChunks.add(key);
+			boolean added = this.loadingChunks.add(key);
 			if (!added) {
 				cpw.mods.fml.common.FMLLog.bigWarning(
 						"There is an attempt to load a chunk (%d,%d) in dimension %d that is already being loaded. This will cause weird chunk breakages.",
@@ -277,7 +290,7 @@ public class ChunkProviderServer implements IChunkProvider {
 
 			this.loadedChunkHashMap.add(key, chunk);
 			addToLoadedChunks(chunk);
-			loadingChunks.remove(key);
+			this.loadingChunks.remove(key);
 			chunk.onChunkLoad();
 			chunk.populateChunk(this, this, chunkX, chunkZ);
 		}
@@ -290,17 +303,8 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * will generates all the blocks for the specified chunk from the map seed
 	 * and chunk seed
 	 */
-	//int count = 0;
-	//long time = 0;
-	public Chunk provideChunk(int chunkX, int chunkZ) {
-		//long start = System.nanoTime();
+	public Chunk provideChunk(final int chunkX, final int chunkZ) {
 		Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ));
-		//time += System.nanoTime() - start;
-		//if((++count % 100000000) == 0) {
-			//logger.info("TIME: " + (time/count));
-			//count = 0;
-			//time = 0;
-		//}
 		return chunk == null ? (!this.worldObj.findingSpawnPoint && !this.loadChunkOnProvideRequest
 				? this.defaultEmptyChunk : this.loadChunk(chunkX, chunkZ)) : chunk;
 	}
@@ -308,7 +312,7 @@ public class ChunkProviderServer implements IChunkProvider {
 	/**
 	 * used by loadChunk, but catches any exceptions if the load fails.
 	 */
-	private Chunk safeLoadChunk(int chunkX, int chunkZ) {
+	private Chunk safeLoadChunk(final int chunkX, final int chunkZ) {
 		if (this.currentChunkLoader == null) {
 			return null;
 		} else {
@@ -334,7 +338,7 @@ public class ChunkProviderServer implements IChunkProvider {
 	/**
 	 * used by saveChunks, but catches any exceptions if the save fails.
 	 */
-	private void safeSaveExtraChunkData(Chunk chunk) {
+	private void safeSaveExtraChunkData(final Chunk chunk) {
 		if (this.currentChunkLoader != null) {
 			try {
 				this.currentChunkLoader.saveExtraChunkData(this.worldObj, chunk);
@@ -347,7 +351,7 @@ public class ChunkProviderServer implements IChunkProvider {
 	/**
 	 * used by saveChunks, but catches any exceptions if the save fails.
 	 */
-	private void safeSaveChunk(Chunk chunk) {
+	private void safeSaveChunk(final Chunk chunk) {
 		if (this.currentChunkLoader != null) {
 			try {
 				chunk.lastSaveTime = this.worldObj.getTotalWorldTime();
@@ -364,8 +368,8 @@ public class ChunkProviderServer implements IChunkProvider {
 	/**
 	 * Populates chunk with ores etc etc
 	 */
-	public void populate(IChunkProvider provider, int chunkX, int chunkZ) {
-		Chunk chunk = this.provideChunk(chunkX, chunkZ);
+	public void populate(final IChunkProvider provider, final int chunkX, final int chunkZ) {
+		final Chunk chunk = this.provideChunk(chunkX, chunkZ);
 
 		if (!chunk.isTerrainPopulated) {
 			chunk.func_150809_p();
@@ -383,7 +387,7 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * passed false, save up to two chunks. Return true if all chunks have been
 	 * saved.
 	 */
-	public boolean saveChunks(boolean saveAll, IProgressUpdate notUsed) {
+	public boolean saveChunks(final boolean saveAll, final IProgressUpdate notUsed) {
 		int saveLimit = saveAll ? 0 : 25;
 
 		for (int i = 0; i < this.newLoadedChunk; i++) {
@@ -412,50 +416,73 @@ public class ChunkProviderServer implements IChunkProvider {
 		}
 	}
 
+	// Vanilla caps the limit at 100. It is single threaded and saves
+	// every chunk regardless of need. Bumped to 300 because chunk
+	// IO is multi-threaded and has bandwidth. Also, the only chunks
+	// that are counted against this limit are those that actually
+	// save.
+	//
+	// Should point out that increasing the number will also help
+	// mitigate the impact of processing chunk loaded chunks. A
+	// larger batch size reduces the number of times that loop has to
+	// execute.
 	private static final int UNLOAD_SAVE_LIMIT = 300;
-	private static final boolean ALWAYS_SAVE = false;
+
+	// Debug flag to control save behavior while it is being evaluated.
+	private static final boolean ALWAYS_SAVE = true;
 
 	/**
 	 * Unloads chunks that are marked to be unloaded. This is not guaranteed to
 	 * unload every such chunk.
 	 */
+	@SuppressWarnings("unused")
 	public boolean unloadQueuedChunks() {
 		if (canSave()) {
 
 			if (this.newChunksToUnload > 0) {
 
+				// This loop can get expensive depending on the number of chunk
+				// loaded chunks that are currently active.
 				for (final ChunkCoordIntPair forced : this.worldObj.getPersistentChunks().keySet()) {
 					removeFromChunksToUnload(ChunkCoordIntPair.chunkXZ2Int(forced.chunkXPos, forced.chunkZPos));
 				}
 
 				int throttle = 0;
-				while (newChunksToUnload > 0 && throttle < UNLOAD_SAVE_LIMIT) {
-					final long olong = this.chunksToUnload[--newChunksToUnload];
-					final Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(olong);
+				while (this.newChunksToUnload > 0 && throttle < UNLOAD_SAVE_LIMIT) {
+					final long key = this.chunksToUnload[--this.newChunksToUnload];
+					final Chunk chunk = (Chunk) this.loadedChunkHashMap.getValueByKey(key);
 
+					// Shouldn't get this, but better safe than sorry
 					if (chunk == null)
 						continue;
 
+					// Let folks know the chunk is about to unload
 					chunk.onChunkUnload();
+
 					// TODO: Does it always have to save regardless? Chunk
 					// spawns critters before unload for some reason, and it
 					// doesn't look like it is marked dirty. May not be a
-					// big deal.
+					// big deal. Another factor is onChunkUnload() - may
+					// trigger chunk changes that are not captured in the
+					// modified flag.
 					if (ALWAYS_SAVE || chunk.needsSaving(true)) {
 						throttle++;
 						this.safeSaveChunk(chunk);
 						this.safeSaveExtraChunkData(chunk);
 					}
+
+					// Cleanup
 					removeFromLoadedChunks(chunk);
-					ForgeChunkManager.putDormantChunk(ChunkCoordIntPair.chunkXZ2Int(chunk.xPosition, chunk.zPosition),
-							chunk);
+					this.loadedChunkHashMap.remove(key);
+					ForgeChunkManager.putDormantChunk(key, chunk);
+
+					// If we have no loaded chunks and the dimension is not
+					// pinned in memory, unload the dimension.
 					if (this.newLoadedChunk == 0 && ForgeChunkManager.getPersistentChunksFor(this.worldObj).size() == 0
 							&& !DimensionManager.shouldLoadSpawn(this.worldObj.provider.dimensionId)) {
 						DimensionManager.unloadWorld(this.worldObj.provider.dimensionId);
 						return this.currentChunkProvider.unloadQueuedChunks();
 					}
-
-					this.loadedChunkHashMap.remove(olong);
 				}
 			}
 

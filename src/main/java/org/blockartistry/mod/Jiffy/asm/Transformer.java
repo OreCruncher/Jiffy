@@ -86,7 +86,15 @@ public class Transformer implements IClassTransformer {
 
 		targets.put("net.minecraft.util.LongHashMap", "util.LongHashMap");
 		targets.put("net.minecraft.util.LongHashMap$Entry", "util.LongHashMap$Entry");
-
+		
+		targets.put("net.minecraft.world.biome.BiomeCache", "world.biome.BiomeCache");
+		targets.put("net.minecraft.world.biome.BiomeCache$Block", "world.biome.BiomeCache$Block");
+		targets.put("net.minecraft.world.biome.BiomeCache$RemoveOldEntries", "world.biome.BiomeCache$RemoveOldEntries");
+		
+		targets.put("net.minecraft.world.gen.layer.IntCache", "world.gen.layer.IntCache");
+		
+		targets.put("net.minecraft.world.ChunkCache", "world.ChunkCache");
+		
 		// Forge classes
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOProvider", "common.chunkio.ChunkIOProvider");
@@ -113,7 +121,15 @@ public class Transformer implements IClassTransformer {
 
 		targets.put("qd", "util.LongHashMap");
 		targets.put("qe", "util.LongHashMap$Entry");
-
+		
+		targets.put("ahy", "world.biome.BiomeCache");
+		targets.put("ahz", "world.biome.BiomeCache$Block");
+		targets.put("ahy$RemoveOldEntries", "world.biome.BiomeCache$RemoveOldEntries");
+		
+		targets.put("axl", "world.gen.layer.IntCache");
+		
+		targets.put("ahr", "world.ChunkCache");
+		
 		// Obsfucation mapping - yay obsfucation!
 		// RegionFileCache
 		Map<String, String> map = new HashMap<String, String>();
@@ -169,6 +185,28 @@ public class Transformer implements IClassTransformer {
 		map.put("getValueByKey(J)Ljava/lang/Object;", "func_76164_a");
 		map.put("remove(J)Ljava/lang/Object;", "func_76159_d");
 		obsRemap.put("LongHashMap", map);
+		
+		// BiomeCache
+		map.put("getBiomeGenAt(II)Lnet/minecraft/world/biome/BiomeGenBase;", "func_76837_b");
+		map.put("cleanupCache()V", "func_76838_a");
+		map.put("getCachedBiomes(II)[Lnet/minecraft/world/biome/BiomeGenBase;", "func_76839_e");
+		map.put("getBiomeCacheBlock(II)Lnet/minecraft/world/biome/BiomeCache$Block;", "func_76840_a");
+		obsRemap.put("BiomeCache", map);
+		
+		// IntCache
+		map = new HashMap<String, String>();
+		map.put("getIntCache(I)[I", "func_76445_a");
+		map.put("resetIntCache()V", "func_76446_a");
+		map.put("getCacheSizes()Ljava/lang/String;", "func_85144_b");
+		obsRemap.put("IntCache", map);
+		
+		// ChunkCache
+		map = new HashMap<String, String>();
+		map.put("getSpecialBlockBrightness(Lnet/minecraft/world/EnumSkyBlock;III)I", "func_72812_b");
+		map.put("getSkyBlockTypeBrightness(Lnet/minecraft/world/EnumSkyBlock;III)I", "func_72810_a");
+		map.put("getHeight()I", "func_72800_K");
+		map.put("getBlockMetadata(III)I", "func_72805_g");
+		obsRemap.put("ChunkCache", map);
 	}
 
 	private byte[] getClassBytes(final String clazz) {

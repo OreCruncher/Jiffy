@@ -1,27 +1,52 @@
+/*
+ * This file is part of Jiffy, licensed under the MIT License (MIT).
+ *
+ * Copyright (c) OreCruncher
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 package org.blockartistry.util;
 
+import java.util.function.Predicate;
+
 /**
- * Replacement LongHashMap.  Improves on the Vanilla version by:
+ * Replacement LongHashMap. Improves on the Vanilla version by:
  * 
- * + Default size of the map is 4K entries.  This is what the
- * 1.8.x Vanilla Minecraft codebase does.
+ * + Default size of the map is 4K entries. This is what the 1.8.x Vanilla
+ * Minecraft codebase does.
  * 
- * + Salt the key with a prime number when hashing to improve
- * key distribution.
+ * + Salt the key with a prime number when hashing to improve key distribution.
  * 
- * + Order the Entries by key value when inserting into the
- * collision chain.  Used to perform escapes early when
- * searching/adding.
+ * + Order the Entries by key value when inserting into the collision chain.
+ * Used to perform escapes early when searching/adding.
  * 
- * + "Unroll" method calls for performance.  Though isolating
- * reusable code in separate methods is a good idea, it can
- * hurt performance.
+ * + "Unroll" method calls for performance. Though isolating reusable code in
+ * separate methods is a good idea, it can hurt performance.
  * 
- * + Cache calculated values that are stable to avoid extra
- * instruction cycles when running (e.g. mask).
+ * + Cache calculated values that are stable to avoid extra instruction cycles
+ * when running (e.g. mask).
  * 
- * + Cleaned up chain iteration.  Easier to read and a little
- * more efficient.
+ * + Cleaned up chain iteration. Easier to read and a little more efficient.
+ * 
+ * + removal method that takes a predicate to ease the process of iterating
+ * through the map collection to remove items that meet criteria (BiomeCache).
  *
  */
 public class LongHashMap {
@@ -54,16 +79,30 @@ public class LongHashMap {
 	 * mask assumes the array length is in pow2 form.
 	 */
 	private int mask;
+	
+	/**
+	 * Size of the Entry array.
+	 */
 	private int size;
 
+	/**
+	 * Initializes a LongHashMap with 4K entries with a fill factor of 0.75.
+	 */
 	public LongHashMap() {
-		this(4096, DEFAULT_FILL);
+		this(2048, DEFAULT_FILL);
 	}
 
+	/**
+	 * Initializes a LongHashMap with the specified size using a fill factor
+	 * of 0.75.
+	 */
 	public LongHashMap(final int size) {
 		this(size, DEFAULT_FILL);
 	}
 
+	/**
+	 * Initializes a LongHashMap based on the expected size and fill factor.
+	 */
 	public LongHashMap(final int size, final float fillFactor) {
 		this.size = arraySize(size, fillFactor);
 		this.fillFactor = fillFactor;
@@ -80,7 +119,8 @@ public class LongHashMap {
 	 * Prime < 4K table size.
 	 */
 	private final static int TERM = 3079;
-	private static int getHashedKey(long key) {
+
+	private static int getHashedKey(final long key) {
 		// This is pretty darn good- keep!
 		final int repack = (int) (key * TERM ^ key >>> 32);
 		return repack ^ repack >>> 20 ^ repack >>> 12 ^ repack >>> 7 ^ repack >>> 4;
@@ -107,6 +147,13 @@ public class LongHashMap {
 		return NO_VALUE;
 	}
 
+	/**
+	 * Indicates whether an object is in the map with the associated
+	 * key value.
+	 * 
+	 * @param key Key value to check for
+	 * @return true if a KVP is contained in the map, false otherwise
+	 */
 	public boolean containsItem(final long key) {
 		Entry current = this.hashArray[getHashedKey(key) & this.mask];
 		while (current != FREE) {
@@ -122,7 +169,11 @@ public class LongHashMap {
 	}
 
 	/**
-	 * Add a key-value pair.
+	 * Adds a new key/value pair to the map, or updates an
+	 * existing entry matched based on the provided key.
+	 * 
+	 * @param key Key part of the key/value pair
+	 * @param value Value part of the key/value pair
 	 */
 	public void add(final long key, final Object value) {
 		final int k = getHashedKey(key) & this.mask;
@@ -182,7 +233,10 @@ public class LongHashMap {
 	}
 
 	/**
-	 * calls the removeKey method and returns removed object
+	 * Removes the object associated with the provided key.
+	 * 
+	 * @param key The key for the value to remove
+	 * @return Object that has been removed, or null if not found
 	 */
 	public Object remove(final long key) {
 		final int k = getHashedKey(key) & this.mask;
@@ -190,7 +244,6 @@ public class LongHashMap {
 		Entry previous = FREE;
 
 		while (current != FREE) {
-
 			// Assume the object is in the list so check for
 			// equivalence before escape.
 			if (current.key == key) {
@@ -212,17 +265,53 @@ public class LongHashMap {
 		return NO_VALUE;
 	}
 
+	/**
+	 * Remove map entries that satisfy the provided Predicate. Passing in null
+	 * will remove all entries.
+	 */
+	@SuppressWarnings("unchecked")
+	public <T> void removeAll(final Predicate<T> pred) {
+		if (pred == null) {
+			this.numHashElements = 0;
+			this.hashArray = new Entry[this.size];
+		} else {
+			final int entryCount = this.size;
+			for (int i = 0; i < entryCount; i++) {
+				Entry current = this.hashArray[i];
+				Entry previous = FREE;
+				while (current != FREE) {
+					if (pred.test((T) current.value)) {
+						this.numHashElements--;
+						if (previous == FREE)
+							this.hashArray[i] = current.next;
+						else
+							previous.next = current.next;
+						// Don't advance previous - we just
+						// removed the current node.
+					} else {
+						previous = current;
+					}
+					current = current.next;
+				}
+			}
+		}
+	}
+
 	private static class Entry {
 		/**
-		 * the key as a long (for playerInstances it is the x in the most
+		 * The key as a long (for playerInstances it is the x in the most
 		 * significant 32 bits and then y)
 		 */
 		final long key;
 
-		/** the value held by the hash at the specified key */
+		/**
+		 * The value held by the hash at the specified key
+		 */
 		Object value;
 
-		/** the next hashentry in the table */
+		/**
+		 * The next hashentry in the chain
+		 */
 		Entry next;
 
 		Entry(final long key, final Object value, final Entry entryChain) {
@@ -232,23 +321,30 @@ public class LongHashMap {
 		}
 	}
 
-	public static long nextPowerOfTwo(long x) {
-		if (x == 0)
-			return 1;
-		x--;
-		x |= x >> 1;
-		x |= x >> 2;
-		x |= x >> 4;
-		x |= x >> 8;
-		x |= x >> 16;
-		return (x | x >> 32) + 1;
-	}
+	/**
+	 *  From MathHelper - for some reason it is marked client side :\
+	 */
+    private static int roundUpToPowerOfTwo(final int value)
+    {
+        int j = value - 1;
+        j |= j >> 1;
+        j |= j >> 2;
+        j |= j >> 4;
+        j |= j >> 8;
+        j |= j >> 16;
+        return j + 1;
+    }
 
-	public static int arraySize(final int expected, final float f) {
-		final long s = Math.max(2, nextPowerOfTwo((long) Math.ceil(expected / f)));
+    /**
+     * Size the array to a pow2 value factoring in the fill factor.  This
+     * may return a larger size value than expected because of the fill
+     * factor.
+     */
+	private static int arraySize(final int expected, final float f) {
+		final long s = Math.max(2, roundUpToPowerOfTwo((int) Math.ceil(expected / f)));
 		if (s > (1 << 30))
 			throw new IllegalArgumentException(
 					"Too large (" + expected + " expected elements with load factor " + f + ")");
 		return (int) s;
 	}
- }
+}

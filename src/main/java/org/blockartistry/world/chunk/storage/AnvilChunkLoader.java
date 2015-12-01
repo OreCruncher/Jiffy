@@ -97,9 +97,8 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 		public void onRemoval(final RemovalNotification<ChunkCoordIntPair, NBTTagCompound> notification) {
 			try {
 				// Only flush the entry if it was invalidated. Any entry could
-				// be
-				// updated prior to it being written by an IO thread so we want
-				// to avoid unnecessary writes.
+				// be updated prior to it being written by an IO thread so we
+				// want to avoid unnecessary writes.
 				if (notification.getCause() == RemovalCause.EXPLICIT)
 					AnvilChunkLoader.this.writeChunkNBTTags(notification.getKey(), notification.getValue());
 			} catch (final Exception e) {
@@ -143,7 +142,7 @@ public class AnvilChunkLoader implements IChunkLoader, IThreadedFileIO {
 			throws IOException, ExecutionException {
 		final ChunkCoordIntPair coords = new ChunkCoordIntPair(chunkX, chunkZ);
 		NBTTagCompound nbt = pendingIO.getIfPresent(coords);
-
+		
 		if (nbt == null) {
 			DataInputStream stream = null;
 
