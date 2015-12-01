@@ -24,6 +24,7 @@
 
 package org.blockartistry.world.biome;
 
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 import org.blockartistry.util.LongHashMap;
@@ -36,7 +37,9 @@ import net.minecraft.world.biome.WorldChunkManager;
  * Changes:
  * 
  * + Use removeAll() with predicate to remove entries from the map rather than
- * maintaining a separate list.
+ * maintaining a separate list.  More efficient if there are number of elements
+ * to remove from the cache as the logic will iterate once through the list
+ * unlinking entries.
  * 
  * + Bumped the clean interval from 7.5 seconds to 10 seconds.
  * 
@@ -45,9 +48,14 @@ import net.minecraft.world.biome.WorldChunkManager;
  */
 public class BiomeCache {
 
-	// Time in nanoseconds.  Immune to system time changes, DST, etc.
-	private final static long CLEAN_INTERVAL = 10000000000L; // 10 seconds
-	private final static long EXPIRE_THRESHOLD = 30000000000L; // 30 seconds
+	// Time in nanoseconds.  Immune to system time changes, DST, etc.  Should
+	// these timings be tied to game tick count rather than wall clock time?
+	private final static long CLEAN_INTERVAL = TimeUnit.NANOSECONDS.convert(10, TimeUnit.SECONDS);
+	private final static long EXPIRE_THRESHOLD = TimeUnit.NANOSECONDS.convert(30, TimeUnit.SECONDS);
+	
+	private static long timeMark() {
+		return System.nanoTime();
+	}
 
 	/** Reference to the WorldChunkManager */
 	private final WorldChunkManager chunkManager;
@@ -61,7 +69,7 @@ public class BiomeCache {
 
 	public BiomeCache(final WorldChunkManager manager) {
 		this.chunkManager = manager;
-		this.lastCleanupTime = System.nanoTime();
+		this.lastCleanupTime = timeMark();
 	}
 
 	/**
@@ -78,7 +86,7 @@ public class BiomeCache {
 			this.cacheMap.add(k, block);
 		}
 		
-		block.lastAccessTime = System.nanoTime();
+		block.lastAccessTime = timeMark();
 		return block;
 	}
 
@@ -94,7 +102,7 @@ public class BiomeCache {
 	 * least 30 seconds.
 	 */
 	public void cleanupCache() {
-		final long i = System.nanoTime();
+		final long i = timeMark();
 		if ((i - this.lastCleanupTime) > CLEAN_INTERVAL) {
 			this.lastCleanupTime = i;
 			this.cacheMap.removeAll(new RemoveOldEntries(i));
@@ -124,20 +132,22 @@ public class BiomeCache {
 
 	public class Block {
 		/** An array of chunk rainfall values saved by this cache. */
-		public float[] rainfallValues = new float[256];
+		//public float[] rainfallValues = new float[256];
 		/** The array of biome types stored in this BiomeCacheBlock. */
-		public BiomeGenBase[] biomes = new BiomeGenBase[256];
+		public final BiomeGenBase[] biomes = new BiomeGenBase[256];
 		/** The x coordinate of the BiomeCacheBlock. */
-		public int xPosition;
+		public final int xPosition;
 		/** The z coordinate of the BiomeCacheBlock. */
-		public int zPosition;
+		public final int zPosition;
 		/** The last time this BiomeCacheBlock was accessed, in milliseconds. */
 		public long lastAccessTime;
 
 		public Block(int p_i1972_2_, int p_i1972_3_) {
 			this.xPosition = p_i1972_2_;
 			this.zPosition = p_i1972_3_;
-			BiomeCache.this.chunkManager.getRainfall(this.rainfallValues, p_i1972_2_ << 4, p_i1972_3_ << 4, 16, 16);
+			// TODO: Anything use rainfall?  Forge/Vanilla doesn't make use
+			// of it, and it doesn't look "wired in" like biomes.
+			//BiomeCache.this.chunkManager.getRainfall(this.rainfallValues, p_i1972_2_ << 4, p_i1972_3_ << 4, 16, 16);
 			BiomeCache.this.chunkManager.getBiomeGenAt(this.biomes, p_i1972_2_ << 4, p_i1972_3_ << 4, 16, 16, false);
 		}
 

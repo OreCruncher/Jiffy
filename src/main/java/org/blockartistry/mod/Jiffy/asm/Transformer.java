@@ -30,8 +30,15 @@ import java.io.StringWriter;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.objectweb.asm.Opcodes.*;
+
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 import org.objectweb.asm.util.CheckClassAdapter;
 
 import net.minecraft.launchwrapper.IClassTransformer;
@@ -123,8 +130,8 @@ public class Transformer implements IClassTransformer {
 		targets.put("qe", "util.LongHashMap$Entry");
 		
 		targets.put("ahy", "world.biome.BiomeCache");
-		targets.put("ahz", "world.biome.BiomeCache$Block");
 		targets.put("ahy$RemoveOldEntries", "world.biome.BiomeCache$RemoveOldEntries");
+		targets.put("ahz", "world.biome.BiomeCache$Block");
 		
 		targets.put("axl", "world.gen.layer.IntCache");
 		
@@ -235,7 +242,6 @@ public class Transformer implements IClassTransformer {
 
 	@Override
 	public byte[] transform(String name, String transformedName, byte[] basicClass) {
-
 		final String src = targets.get(name);
 		if (src != null) {
 			final byte[] newBytes = getClassBytes(src);
@@ -254,8 +260,47 @@ public class Transformer implements IClassTransformer {
 			} else {
 				logger.warn("Unable to find classbytes for " + src);
 			}
+		} else if("net.minecraft.util.MathHelper".equals(name) || "qh".equals(name)) {
+			return transformMathUtils(basicClass);
 		}
 
 		return basicClass;
+	}
+	
+	private byte[] transformMathUtils(final byte[] classBytes) {
+		
+		String names[] = null;
+		
+		if(TransformLoader.runtimeDeobEnabled)
+			names = new String[] { "func_76126_a", "func_76134_b"};
+		else
+			names = new String[] { "sin", "cos" };
+		
+		final String targetName[] = new String[] { "sin", "cos" };
+		
+		final ClassReader cr = new ClassReader(classBytes);
+		final ClassNode cn = new ClassNode(ASM5);
+		cr.accept(cn, 0);
+
+		for (final MethodNode m : cn.methods) {
+			int targetId = -1;
+			if(m.name.equals(names[0]))
+				targetId = 0;
+			else if(m.name.equals(names[1]))
+				targetId = 1;
+			
+			if(targetId != -1) {
+				m.localVariables = null;
+				m.instructions.clear();
+				m.instructions.add(new VarInsnNode(FLOAD, 0));
+				final String sig = "(F)F";
+				m.instructions.add(new MethodInsnNode(INVOKESTATIC, "org/blockartistry/util/MathHelper", targetName[targetId], sig, false));
+				m.instructions.add(new InsnNode(FRETURN));
+			}
+		}
+
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cn.accept(cw);
+		return cw.toByteArray();
 	}
 }
