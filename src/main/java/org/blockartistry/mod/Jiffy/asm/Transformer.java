@@ -24,6 +24,7 @@
 
 package org.blockartistry.mod.Jiffy.asm;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -93,15 +94,18 @@ public class Transformer implements IClassTransformer {
 
 		targets.put("net.minecraft.util.LongHashMap", "util.LongHashMap");
 		targets.put("net.minecraft.util.LongHashMap$Entry", "util.LongHashMap$Entry");
-		
+
 		targets.put("net.minecraft.world.biome.BiomeCache", "world.biome.BiomeCache");
 		targets.put("net.minecraft.world.biome.BiomeCache$Block", "world.biome.BiomeCache$Block");
 		targets.put("net.minecraft.world.biome.BiomeCache$RemoveOldEntries", "world.biome.BiomeCache$RemoveOldEntries");
-		
+
 		targets.put("net.minecraft.world.gen.layer.IntCache", "world.gen.layer.IntCache");
-		
+
 		targets.put("net.minecraft.world.ChunkCache", "world.ChunkCache");
-		
+
+		targets.put("net.minecraft.world.WorldServer", "world.WorldServer");
+		targets.put("net.minecraft.world.WorldServer$ServerBlockEventList", "world.WorldServer$ServerBlockEventList");
+
 		// Forge classes
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOProvider", "common.chunkio.ChunkIOProvider");
@@ -128,15 +132,18 @@ public class Transformer implements IClassTransformer {
 
 		targets.put("qd", "util.LongHashMap");
 		targets.put("qe", "util.LongHashMap$Entry");
-		
+
 		targets.put("ahy", "world.biome.BiomeCache");
 		targets.put("ahy$RemoveOldEntries", "world.biome.BiomeCache$RemoveOldEntries");
 		targets.put("ahz", "world.biome.BiomeCache$Block");
-		
+
 		targets.put("axl", "world.gen.layer.IntCache");
-		
+
 		targets.put("ahr", "world.ChunkCache");
-		
+
+		targets.put("mt", "world.WorldServer");
+		targets.put("mv", "world.WorldServer$ServerBlockEventList");
+
 		// Obsfucation mapping - yay obsfucation!
 		// RegionFileCache
 		Map<String, String> map = new HashMap<String, String>();
@@ -192,21 +199,21 @@ public class Transformer implements IClassTransformer {
 		map.put("getValueByKey(J)Ljava/lang/Object;", "func_76164_a");
 		map.put("remove(J)Ljava/lang/Object;", "func_76159_d");
 		obsRemap.put("LongHashMap", map);
-		
+
 		// BiomeCache
 		map.put("getBiomeGenAt(II)Lnet/minecraft/world/biome/BiomeGenBase;", "func_76837_b");
 		map.put("cleanupCache()V", "func_76838_a");
 		map.put("getCachedBiomes(II)[Lnet/minecraft/world/biome/BiomeGenBase;", "func_76839_e");
 		map.put("getBiomeCacheBlock(II)Lnet/minecraft/world/biome/BiomeCache$Block;", "func_76840_a");
 		obsRemap.put("BiomeCache", map);
-		
+
 		// IntCache
 		map = new HashMap<String, String>();
 		map.put("getIntCache(I)[I", "func_76445_a");
 		map.put("resetIntCache()V", "func_76446_a");
 		map.put("getCacheSizes()Ljava/lang/String;", "func_85144_b");
 		obsRemap.put("IntCache", map);
-		
+
 		// ChunkCache
 		map = new HashMap<String, String>();
 		map.put("getSpecialBlockBrightness(Lnet/minecraft/world/EnumSkyBlock;III)I", "func_72812_b");
@@ -214,15 +221,48 @@ public class Transformer implements IClassTransformer {
 		map.put("getHeight()I", "func_72800_K");
 		map.put("getBlockMetadata(III)I", "func_72805_g");
 		obsRemap.put("ChunkCache", map);
+
+		// WorldServer
+		map = new HashMap<String, String>();
+		map.put("getEntityTracker()Lnet/minecraft/entity/EntityTracker;", "func_73039_n");
+		map.put("createBonusChest()V", "func_73047_i");
+		map.put("flush()V", "func_73041_k");
+		map.put("getDefaultTeleporter()Lnet/minecraft/world/Teleporter;", "func_85176_s");
+		map.put("createSpawnPosition(Lnet/minecraft/world/WorldSettings;)V", "func_73052_b");
+		map.put("getEntrancePortalLocation()Lnet/minecraft/util/ChunkCoordinates;", "func_73054_j");
+		map.put("resetRainAndThunder()V", "func_73051_P");
+		map.put("saveAllChunks(ZLnet/minecraft/util/IProgressUpdate;)V", "func_73044_a");
+		map.put("updateAllPlayersSleepingFlag()V", "func_72854_c");
+		map.put("resetUpdateEntityTick()V", "func_82742_i");
+		map.put("getPlayerManager()Lnet/minecraft/server/management/PlayerManager;", "func_73040_p");
+		map.put("getEntityByID(I)Lnet/minecraft/entity/Entity;", "func_73045_a");
+		map.put("areAllPlayersAsleep()Z", "func_73056_e");
+		map.put("setEntityState(Lnet/minecraft/entity/Entity;B)V", "func_72960_a");
+		map.put("updateEntityWithOptionalForce(Lnet/minecraft/entity/Entity;Z)V", "func_72866_a");
+		map.put("saveLevel()V", "func_73042_a");
+		map.put("wakeAllPlayers()V", "func_73053_d");
+		map.put("saveChunkData()V", "func_104140_m");
+		map.put("initialize(Lnet/minecraft/world/WorldSettings;)V", "func_72963_a");
+		map.put("spawnRandomCreature(Lnet/minecraft/entity/EnumCreatureType;III)Lnet/minecraft/world/biome/BiomeGenBase$SpawnListEntry;",
+				"func_73057_a");
+		map.put("onEntityAdded(Lnet/minecraft/entity/Entity;)V", "func_72923_a");
+		map.put("bonusChestContent","field_73069_S");
+		map.put("theChunkProviderServer", "field_73059_b");
+		map.put("levelSaving", "field_73058_d");
+		obsRemap.put("WorldServer", map);
 	}
 
 	private byte[] getClassBytes(final String clazz) {
 		try {
 			final String name = ("org.blockartistry." + clazz).replace('.', '/') + ".class";
-			InputStream stream = Transformer.class.getClassLoader().getResourceAsStream(name);
-			final byte[] result = new byte[stream.available()];
-			stream.read(result);
-			return result;
+			final InputStream stream = Transformer.class.getClassLoader().getResourceAsStream(name);
+			final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			final byte[] buffer = new byte[1024];
+			int read = 0;
+			while ((read = stream.read(buffer, 0, buffer.length)) != -1)
+				baos.write(buffer, 0, read);
+			baos.flush();
+			return baos.toByteArray();
 		} catch (final Exception e) {
 			logger.error("Error getting class information", e);
 		}
@@ -260,45 +300,46 @@ public class Transformer implements IClassTransformer {
 			} else {
 				logger.warn("Unable to find classbytes for " + src);
 			}
-		} else if("net.minecraft.util.MathHelper".equals(name) || "qh".equals(name)) {
+		} else if ("net.minecraft.util.MathHelper".equals(name) || "qh".equals(name)) {
 			logger.info("Transforming MathHelper...");
 			return transformMathUtils(basicClass);
-		} else if("net.minecraft.block.BlockLeaves".equals(name) || "alt".equals(name)) {
+		} else if ("net.minecraft.block.BlockLeaves".equals(name) || "alt".equals(name)) {
 			logger.info("Transforming BlockLeaves...");
 			return transformBlockLeaves(basicClass);
 		}
 
 		return basicClass;
 	}
-	
+
 	private byte[] transformMathUtils(final byte[] classBytes) {
-		
+
 		String names[] = null;
-		
-		if(TransformLoader.runtimeDeobEnabled)
-			names = new String[] { "func_76126_a", "func_76134_b"};
+
+		if (TransformLoader.runtimeDeobEnabled)
+			names = new String[] { "func_76126_a", "func_76134_b" };
 		else
 			names = new String[] { "sin", "cos" };
-		
+
 		final String targetName[] = new String[] { "sin", "cos" };
-		
+
 		final ClassReader cr = new ClassReader(classBytes);
 		final ClassNode cn = new ClassNode(ASM5);
 		cr.accept(cn, 0);
 
 		for (final MethodNode m : cn.methods) {
 			int targetId = -1;
-			if(m.name.equals(names[0]))
+			if (m.name.equals(names[0]))
 				targetId = 0;
-			else if(m.name.equals(names[1]))
+			else if (m.name.equals(names[1]))
 				targetId = 1;
-			
-			if(targetId != -1) {
+
+			if (targetId != -1) {
 				m.localVariables = null;
 				m.instructions.clear();
 				m.instructions.add(new VarInsnNode(FLOAD, 0));
 				final String sig = "(F)F";
-				m.instructions.add(new MethodInsnNode(INVOKESTATIC, "org/blockartistry/util/MathHelper", targetName[targetId], sig, false));
+				m.instructions.add(new MethodInsnNode(INVOKESTATIC, "org/blockartistry/util/MathHelper",
+						targetName[targetId], sig, false));
 				m.instructions.add(new InsnNode(FRETURN));
 			}
 		}
@@ -307,23 +348,23 @@ public class Transformer implements IClassTransformer {
 		cn.accept(cw);
 		return cw.toByteArray();
 	}
-	
+
 	private byte[] transformBlockLeaves(final byte[] classBytes) {
 		String names[] = null;
-		
-		if(TransformLoader.runtimeDeobEnabled)
+
+		if (TransformLoader.runtimeDeobEnabled)
 			names = new String[] { "beginLeavesDecay" };
 		else
 			names = new String[] { "beginLeavesDecay" };
-		
+
 		final String targetName[] = new String[] { "beginLeavesDecay" };
-		
+
 		final ClassReader cr = new ClassReader(classBytes);
 		final ClassNode cn = new ClassNode(ASM5);
 		cr.accept(cn, 0);
 
 		for (final MethodNode m : cn.methods) {
-			if(m.name.equals(names[0])) {
+			if (m.name.equals(names[0])) {
 				m.localVariables = null;
 				m.instructions.clear();
 				m.instructions.add(new VarInsnNode(ALOAD, 1));
@@ -331,7 +372,8 @@ public class Transformer implements IClassTransformer {
 				m.instructions.add(new VarInsnNode(ILOAD, 3));
 				m.instructions.add(new VarInsnNode(ILOAD, 4));
 				final String sig = "(Lnet/minecraft/world/World;III)V";
-				m.instructions.add(new MethodInsnNode(INVOKESTATIC, "org/blockartistry/block/BlockLeaves", targetName[0], sig, false));
+				m.instructions.add(new MethodInsnNode(INVOKESTATIC, "org/blockartistry/block/BlockLeaves",
+						targetName[0], sig, false));
 				m.instructions.add(new InsnNode(RETURN));
 				logger.info("Hooked beginLeavesDecay");
 				break;

@@ -39,7 +39,6 @@ import net.minecraft.world.ChunkCoordIntPair;
 import net.minecraft.world.ChunkPosition;
 import net.minecraft.world.MinecraftException;
 import net.minecraft.world.World;
-import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.EmptyChunk;
 import net.minecraft.world.chunk.IChunkProvider;
@@ -148,14 +147,14 @@ public class ChunkProviderServer implements IChunkProvider {
 	public boolean loadChunkOnProvideRequest = true;
 	public LongHashMap loadedChunkHashMap = new LongHashMap();
 	public List<Chunk> loadedChunks = new SimpleChunkList();
-	public WorldServer worldObj;
+	public World worldObj;
 	private Set<Long> loadingChunks = com.google.common.collect.Sets.newHashSet();
 	@SuppressWarnings("unused")
 	private static final String __OBFID = "CL_00001436";
 
 	private final boolean worryAboutSpawn;
 
-	public ChunkProviderServer(WorldServer world, IChunkLoader loader, IChunkProvider provider) {
+	public ChunkProviderServer(World world, IChunkLoader loader, IChunkProvider provider) {
 		this.defaultEmptyChunk = new EmptyChunk(world, 0, 0);
 		this.worldObj = world;
 		this.currentChunkLoader = loader;
@@ -459,11 +458,8 @@ public class ChunkProviderServer implements IChunkProvider {
 					// Let folks know the chunk is about to unload
 					chunk.onChunkUnload();
 
-					// TODO: Does it always have to save regardless? Chunk
-					// spawns critters before unload for some reason, and it
-					// doesn't look like it is marked dirty. May not be a
-					// big deal. Another factor is onChunkUnload() - may
-					// trigger chunk changes that are not captured in the
+					// TODO: Does it always have to save regardless? onChunkUnload()
+					// - may trigger chunk changes that are not captured in the
 					// modified flag.
 					if (ALWAYS_SAVE || chunk.needsSaving(true)) {
 						throttle++;
@@ -498,7 +494,10 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * Returns if the IChunkProvider supports saving.
 	 */
 	public boolean canSave() {
-		return !this.worldObj.levelSaving;
+		// Have to do this casting because of the cyclic dependency
+		// between WorldServer and ChunkProviderServer.  The dependency
+		// plays havoc with class loading.
+		return !((net.minecraft.world.WorldServer)(this.worldObj)).levelSaving;
 	}
 
 	/**
@@ -512,8 +511,8 @@ public class ChunkProviderServer implements IChunkProvider {
 	 * Returns a list of creatures of the specified type that can spawn at the
 	 * given location.
 	 */
-	public List<?> getPossibleCreatures(EnumCreatureType p_73155_1_, int p_73155_2_, int p_73155_3_, int p_73155_4_) {
-		return this.currentChunkProvider.getPossibleCreatures(p_73155_1_, p_73155_2_, p_73155_3_, p_73155_4_);
+	public List<?> getPossibleCreatures(EnumCreatureType type, int x, int y, int z) {
+		return this.currentChunkProvider.getPossibleCreatures(type, x, y, z);
 	}
 
 	public ChunkPosition func_147416_a(World p_147416_1_, String p_147416_2_, int p_147416_3_, int p_147416_4_,
