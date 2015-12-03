@@ -79,7 +79,6 @@ import net.minecraft.world.Explosion;
 import net.minecraft.world.GameRules;
 import net.minecraft.world.MinecraftException;
 import net.minecraft.world.NextTickListEntry;
-import net.minecraft.world.SpawnerAnimals;
 import net.minecraft.world.Teleporter;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
@@ -248,7 +247,7 @@ public class WorldServer extends World {
 		this.theProfiler.endStartSection("mobSpawner");
 
 		if (this.rules.getGameRuleBooleanValue("doMobSpawning")) {
-			this.animalSpawner.findChunksForSpawning(this.thePlayerManager.getWorldServer(), this.spawnHostileMobs,
+			this.animalSpawner.findChunksForSpawning(this, this.spawnHostileMobs,
 					this.spawnPeacefulMobs, this.worldInfo.getWorldTotalTime() % 400L == 0L);
 		}
 		// END

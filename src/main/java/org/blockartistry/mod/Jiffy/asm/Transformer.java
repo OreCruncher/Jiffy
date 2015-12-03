@@ -106,6 +106,8 @@ public class Transformer implements IClassTransformer {
 		targets.put("net.minecraft.world.WorldServer", "world.WorldServer");
 		targets.put("net.minecraft.world.WorldServer$ServerBlockEventList", "world.WorldServer$ServerBlockEventList");
 
+		targets.put("net.minecraft.world.SpawnerAnimals", "world.SpawnerAnimals");
+
 		// Forge classes
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOExecutor", "common.chunkio.ChunkIOExecutor");
 		targets.put("net.minecraftforge.common.chunkio.ChunkIOProvider", "common.chunkio.ChunkIOProvider");
@@ -143,6 +145,8 @@ public class Transformer implements IClassTransformer {
 
 		targets.put("mt", "world.WorldServer");
 		targets.put("mv", "world.WorldServer$ServerBlockEventList");
+		
+		targets.put("aho", "world.SpawnerAnimals");
 
 		// Obsfucation mapping - yay obsfucation!
 		// RegionFileCache
@@ -246,10 +250,19 @@ public class Transformer implements IClassTransformer {
 		map.put("spawnRandomCreature(Lnet/minecraft/entity/EnumCreatureType;III)Lnet/minecraft/world/biome/BiomeGenBase$SpawnListEntry;",
 				"func_73057_a");
 		map.put("onEntityAdded(Lnet/minecraft/entity/Entity;)V", "func_72923_a");
-		map.put("bonusChestContent","field_73069_S");
+		map.put("bonusChestContent", "field_73069_S");
 		map.put("theChunkProviderServer", "field_73059_b");
 		map.put("levelSaving", "field_73058_d");
 		obsRemap.put("WorldServer", map);
+
+		// SpawnerAnimals
+		map = new HashMap<String, String>();
+		map.put("canCreatureTypeSpawnAtLocation(Lnet/minecraft/entity/EnumCreatureType;Lnet/minecraft/world/World;III)Z",
+				"func_77190_a");
+		map.put("performWorldGenSpawning(Lnet/minecraft/world/World;Lnet/minecraft/world/biome/BiomeGenBase;IIIILjava/util/Random;)V",
+				"func_77191_a");
+		map.put("findChunksForSpawning(Lnet/minecraft/world/WorldServer;ZZZ)I", "func_77192_a");
+		obsRemap.put("SpawnerAnimals", map);
 	}
 
 	private byte[] getClassBytes(final String clazz) {
