@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * synchronization and permits the use of seed values to maintain the
  * deterministic random behavior when using a specific world seed.
  * 
- * (By fast I mean like 4x faster)
+ * (By fast I mean like 4x faster using nextInt())
  */
 public class XorShiftRandom extends Random {
 

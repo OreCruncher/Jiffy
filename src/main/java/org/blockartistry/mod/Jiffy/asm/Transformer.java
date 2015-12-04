@@ -278,7 +278,7 @@ public class Transformer implements IClassTransformer {
 		randomReplaceExclude.add("org/objectweb");
 		randomReplaceExclude.add("org/apache");
 		randomReplaceExclude.add("com/google");
-		randomReplaceExclude.add("com/mia"); // DecoCraft
+		//randomReplaceExclude.add("com/mia"); // DecoCraft
 	}
 	
 	private static boolean excludeFromRandomPatch(final String name) {
@@ -333,7 +333,7 @@ public class Transformer implements IClassTransformer {
 				final byte[] result = writer.toByteArray();
 				if (verifyClassBytes(result)) {
 					logger.debug("Load success '" + name + "'!");
-					return result;
+					return replaceRandom(name, result);
 				}
 			} else {
 				logger.warn("Unable to find classbytes for " + src);
@@ -437,6 +437,7 @@ public class Transformer implements IClassTransformer {
 
 		for (final MethodNode m : cn.methods) {
 			final ListIterator<AbstractInsnNode> itr = m.instructions.iterator();
+			boolean foundNew = false;
 			while (itr.hasNext()) {
 				final AbstractInsnNode node = itr.next();
 				if (node.getOpcode() == NEW) {
@@ -444,12 +445,16 @@ public class Transformer implements IClassTransformer {
 					if (randomToReplace.equals(theNew.desc)) {
 						m.instructions.set(node, new TypeInsnNode(NEW, newRandom));
 						madeUpdate = true;
+						foundNew = true;
 					}
 				} else if (node.getOpcode() == INVOKESPECIAL) {
 					final MethodInsnNode theInvoke = (MethodInsnNode) node;
 					if (randomToReplace.equals(theInvoke.owner)) {
-						m.instructions.set(node,
-								new MethodInsnNode(INVOKESPECIAL, newRandom, theInvoke.name, theInvoke.desc, false));
+						if(foundNew) {
+							m.instructions.set(node,
+									new MethodInsnNode(INVOKESPECIAL, newRandom, theInvoke.name, theInvoke.desc, false));
+							foundNew = false;
+						}
 					}
 				}
 			}
