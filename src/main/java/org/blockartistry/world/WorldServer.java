@@ -119,8 +119,9 @@ public class WorldServer extends World {
 	private int updateEntityTick;
 
 	// Use a priority queue for ordering
-	private final PriorityQueue<NextTickListEntry> pendingTickListEntries = new PriorityQueue<NextTickListEntry>(10000);
-	private final Set<NextTickListEntry> containment = new HashSet<NextTickListEntry>(10000);
+	private static final int QUEUE_SIZE = 10000;
+	private PriorityQueue<NextTickListEntry> pendingTickListEntries;
+	private Set<NextTickListEntry> containment;
 
 	/**
 	 * the teleporter to use when the entity is being transferred into the
@@ -152,6 +153,9 @@ public class WorldServer extends World {
 
 	private final GameRules rules;
 
+	// Helper method to construct objects that expect a
+	// Minecraft WorldServer parameter rather than the
+	// class override.  At runtime things will work.
 	@SuppressWarnings("unchecked")
 	private static <T> T produce(Class<T> clazz, Object... init) {
 		try {
@@ -171,9 +175,14 @@ public class WorldServer extends World {
 		this.theEntityTracker = produce(EntityTracker.class, this);
 		this.thePlayerManager = produce(PlayerManager.class, this);
 
-		if (this.entityIdMap == null) {
+		// Possible to have been initialized by World
+		// because of initial world gen.
+		if (this.entityIdMap == null)
 			this.entityIdMap = new IntHashMap();
-		}
+		if(this.pendingTickListEntries == null)
+			this.pendingTickListEntries = new PriorityQueue<NextTickListEntry>(QUEUE_SIZE);
+		if(this.containment == null)
+			containment = new HashSet<NextTickListEntry>(QUEUE_SIZE);
 
 		this.rules = this.getGameRules();
 
@@ -481,7 +490,7 @@ public class WorldServer extends World {
 		// ChunkCoordIntPair(nextticklistentry.xCoord >> 4,
 		// nextticklistentry.zCoord >> 4));
 		// byte b0 = isForced ? 0 : 8;
-		byte b0 = 0;
+		int b0 = 0;
 
 		if (this.scheduledUpdatesAreImmediate) {
 			if (block.func_149698_L()) {
@@ -545,12 +554,14 @@ public class WorldServer extends World {
 	/**
 	 * Runs through the list of updates to run and ticks them
 	 */
-	private static final int MAX_EVENTS = 1000;
+	// This value should probably scale based on load and
+	// server capabilities.
+	private static final int MAX_EVENTS_PER_TICK = 1000;
 
 	public boolean tickUpdates(boolean p_72955_1_) {
 		// Cap the number of events that are going to be
 		// processed this tick.
-		int eventsToProcess = Math.min(MAX_EVENTS, this.pendingTickListEntries.size());
+		int eventsToProcess = Math.min(MAX_EVENTS_PER_TICK, this.pendingTickListEntries.size());
 
 		this.theProfiler.startSection("ticking");
 		while (eventsToProcess-- > 0) {
@@ -709,13 +720,19 @@ public class WorldServer extends World {
 		return !this.mcServer.isBlockProtected(this, par2, par3, par4, par1EntityPlayer);
 	}
 
-	protected void initialize(WorldSettings p_72963_1_) {
-		if (this.entityIdMap == null) {
+	protected void initialize(WorldSettings settings) {
+		// This is here because the World CTOR triggers world
+		// gen that can occur *before* WorldServer has a chance
+		// to initialize.  Bad OOP practice. :\
+		if (this.entityIdMap == null)
 			this.entityIdMap = new IntHashMap();
-		}
+		if(this.pendingTickListEntries == null)
+			this.pendingTickListEntries = new PriorityQueue<NextTickListEntry>(QUEUE_SIZE);
+		if(this.containment == null)
+			containment = new HashSet<NextTickListEntry>(QUEUE_SIZE);
 
-		this.createSpawnPosition(p_72963_1_);
-		super.initialize(p_72963_1_);
+		this.createSpawnPosition(settings);
+		super.initialize(settings);
 	}
 
 	/**

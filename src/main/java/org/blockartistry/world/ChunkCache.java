@@ -27,13 +27,14 @@ package org.blockartistry.world;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 import net.minecraft.block.Block;
+import net.minecraft.block.material.Material;
+import net.minecraft.init.Blocks;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.BiomeGenBase;
 import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.EmptyChunk;
 import net.minecraftforge.common.util.ForgeDirection;
 
 /**
@@ -44,11 +45,6 @@ import net.minecraftforge.common.util.ForgeDirection;
  * + Removed unnecessary checks
  */
 public class ChunkCache implements IBlockAccess {
-
-	// Useful proxy for when a chunk is not found
-	// for some reason. The default methods return
-	// exactly what is needed from the ChunkCache.
-	private final static Chunk EMPTY_CHUNK = new EmptyChunk(null, 0, 0);
 
 	private final int chunkX;
 	private final int chunkZ;
@@ -92,34 +88,47 @@ public class ChunkCache implements IBlockAccess {
 		return this.isEmpty;
 	}
 
-	private Chunk getChunkFromArray(final int x, final int y, final int z) {
+	public Block getBlock(final int x, final int y, final int z) {
 		// Seen out of range Ys come in. Haven't seen out of range
 		// X or Z. Relaxing range checks as not needed.
-		Chunk chunk = EMPTY_CHUNK;
-		if (y >= 0 && y < 256) {
-			final int l = (x >> 4) - this.chunkX;
-			final int i1 = (z >> 4) - this.chunkZ;
-			assert (l >= 0 && l < this.dimX && i1 >= 0 && i1 < this.dimZ);
-			// if (l >= 0 && l < this.dimX && i1 >= 0 && i1 < this.dimZ)
-			chunk = this.chunkArray[l + i1 * this.dimX];
-		}
-		return chunk;
-	}
-
-	public Block getBlock(final int x, final int y, final int z) {
-		return getChunkFromArray(x, y, z).getBlock(x & 15, y, z & 15);
+		if(y < 0 || y > 255)
+			return Blocks.air;
+		
+		final int arrayX = (x >> 4) - this.chunkX;
+		final int arrayZ = (z >> 4) - this.chunkZ;
+		assert (arrayX >= 0 && arrayX < this.dimX && arrayZ >= 0 && arrayZ < this.dimZ);
+		// if (l >= 0 && l < this.dimX && i1 >= 0 && i1 < this.dimZ)
+		return this.chunkArray[arrayX + arrayZ * this.dimX].getBlock(x & 15, y, z & 15);
 	}
 
 	public TileEntity getTileEntity(final int x, final int y, final int z) {
-		return getChunkFromArray(x, y, z).func_150806_e(x & 15, y, z & 15);
+		// Seen out of range Ys come in. Haven't seen out of range
+		// X or Z. Relaxing range checks as not needed.
+		if(y < 0 || y > 255)
+			return null;
+		
+		final int arrayX = (x >> 4) - this.chunkX;
+		final int arrayZ = (z >> 4) - this.chunkZ;
+		assert (arrayX >= 0 && arrayX < this.dimX && arrayZ >= 0 && arrayZ < this.dimZ);
+		// if (l >= 0 && l < this.dimX && i1 >= 0 && i1 < this.dimZ)
+		return this.chunkArray[arrayX + arrayZ * this.dimX].func_150806_e(x & 15, y, z & 15);
 	}
 
 	public int getBlockMetadata(final int x, final int y, final int z) {
-		return getChunkFromArray(x, y, z).getBlockMetadata(x & 15, y, z & 15);
+		// Seen out of range Ys come in. Haven't seen out of range
+		// X or Z. Relaxing range checks as not needed.
+		if(y < 0 || y > 255)
+			return 0;
+		
+		final int arrayX = (x >> 4) - this.chunkX;
+		final int arrayZ = (z >> 4) - this.chunkZ;
+		assert (arrayX >= 0 && arrayX < this.dimX && arrayZ >= 0 && arrayZ < this.dimZ);
+		// if (l >= 0 && l < this.dimX && i1 >= 0 && i1 < this.dimZ)
+		return this.chunkArray[arrayX + arrayZ * this.dimX].getBlockMetadata(x & 15, y, z & 15);
 	}
 
 	public boolean isAirBlock(final int x, final int y, final int z) {
-		return getBlock(x, y, z).isAir(this, x, y, z);
+		return getBlock(x, y, z).getMaterial() == Material.air;
 	}
 
 	public int isBlockProvidingPowerTo(final int x, final int y, final int z, final int dir) {
@@ -156,43 +165,47 @@ public class ChunkCache implements IBlockAccess {
 	 */
 	@SideOnly(Side.CLIENT)
 	public int getSkyBlockTypeBrightness(final EnumSkyBlock skyBlock, final int x, int y, final int z) {
-		if (y < 0) {
-			y = 0;
-		} else if (y >= 256) {
-			y = 255;
-		}
-
 		if (x >= -30000000 && z >= -30000000 && x < 30000000 && z <= 30000000) {
-			if (skyBlock == EnumSkyBlock.Sky && this.worldObj.provider.hasNoSky) {
+			if (skyBlock == EnumSkyBlock.Sky && this.worldObj.provider.hasNoSky)
 				return 0;
-			} else {
-				if (this.getBlock(x, y, z).getUseNeighborBrightness()) {
-					int l = this.getSpecialBlockBrightness(skyBlock, x, y + 1, z);
-					int i1 = this.getSpecialBlockBrightness(skyBlock, x + 1, y, z);
-					int j1 = this.getSpecialBlockBrightness(skyBlock, x - 1, y, z);
-					int k1 = this.getSpecialBlockBrightness(skyBlock, x, y, z + 1);
-					int l1 = this.getSpecialBlockBrightness(skyBlock, x, y, z - 1);
 
-					if (i1 > l) {
-						l = i1;
-					}
+			if (y < 0)
+				y = 0;
+			else if (y > 255)
+				y = 255;
 
-					if (j1 > l) {
-						l = j1;
-					}
+			final int arrayX = (x >> 4) - this.chunkX;
+			final int arrayZ = (z >> 4) - this.chunkZ;
+			assert (arrayX >= 0 && arrayX < this.dimX && arrayZ >= 0 && arrayZ < this.dimZ);
+			// if (l >= 0 && l < this.dimX && i1 >= 0 && i1 < this.dimZ)
+			final Chunk chunk = this.chunkArray[arrayX + arrayZ * this.dimX];
 
-					if (k1 > l) {
-						l = k1;
-					}
+			if (chunk.getBlock(x & 15, y, z & 15).getUseNeighborBrightness()) {
+				int l = this.getSpecialBlockBrightness(skyBlock, x, y + 1, z);
+				int i1 = this.getSpecialBlockBrightness(skyBlock, x + 1, y, z);
+				int j1 = this.getSpecialBlockBrightness(skyBlock, x - 1, y, z);
+				int k1 = this.getSpecialBlockBrightness(skyBlock, x, y, z + 1);
+				int l1 = this.getSpecialBlockBrightness(skyBlock, x, y, z - 1);
 
-					if (l1 > l) {
-						l = l1;
-					}
-
-					return l;
-				} else {
-					return getChunkFromArray(x, y, z).getSavedLightValue(skyBlock, x & 15, y, z & 15);
+				if (i1 > l) {
+					l = i1;
 				}
+
+				if (j1 > l) {
+					l = j1;
+				}
+
+				if (k1 > l) {
+					l = k1;
+				}
+
+				if (l1 > l) {
+					l = l1;
+				}
+
+				return l;
+			} else {
+				return chunk.getSavedLightValue(skyBlock, x & 15, y, z & 15);
 			}
 		} else {
 			return skyBlock.defaultLightValue;
@@ -204,14 +217,17 @@ public class ChunkCache implements IBlockAccess {
 	 */
 	@SideOnly(Side.CLIENT)
 	public int getSpecialBlockBrightness(final EnumSkyBlock skyBlock, final int x, int y, final int z) {
-		if (y < 0) {
-			y = 0;
-		} else if (y >= 256) {
-			y = 255;
-		}
-
 		if (x >= -30000000 && z >= -30000000 && x < 30000000 && z <= 30000000) {
-			return getChunkFromArray(x, y, z).getSavedLightValue(skyBlock, x & 15, y, z & 15);
+			if (y < 0)
+				y = 0;
+			else if (y > 255)
+				y = 255;
+
+			final int arrayX = (x >> 4) - this.chunkX;
+			final int arrayZ = (z >> 4) - this.chunkZ;
+			assert (arrayX >= 0 && arrayX < this.dimX && arrayZ >= 0 && arrayZ < this.dimZ);
+			// if (l >= 0 && l < this.dimX && i1 >= 0 && i1 < this.dimZ)
+			return this.chunkArray[arrayX + arrayZ * this.dimX].getSavedLightValue(skyBlock, x & 15, y, z & 15);
 		} else {
 			return skyBlock.defaultLightValue;
 		}

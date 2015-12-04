@@ -48,19 +48,19 @@ public final class SpawnerAnimals {
 		return null;
 	}
 
-	private static int dSquared(final ChunkCoordinates coord, final int x, final int y, final int z) {
-		final int dX = x - coord.posX;
-		final int dY = y - coord.posY;
-		final int dZ = z - coord.posZ;
+	private static long dSquared(final ChunkCoordinates coord, final int x, final int y, final int z) {
+		final long dX = x - coord.posX;
+		final long dY = y - coord.posY;
+		final long dZ = z - coord.posZ;
 		return (dX * dX) + (dY * dY) + (dZ * dZ);
 	}
 
 	@SuppressWarnings("unchecked")
-	private static boolean playersWithin(final World world, final int x, final int y, final int z, final int distSq) {
+	private static boolean anyPlayersWithin(final World world, final int x, final int y, final int z, final int dist) {
 		for (final EntityPlayer entityPlayer : (List<EntityPlayer>) world.playerEntities) {
 			final ChunkCoordinates coord = new ChunkCoordinates(entityPlayer.chunkCoordX, entityPlayer.chunkCoordY,
 					entityPlayer.chunkCoordZ);
-			if (dSquared(coord, x, y, z) <= distSq)
+			if (dSquared(coord, x, y, z) <= (dist * dist))
 				return true;
 		}
 
@@ -76,135 +76,142 @@ public final class SpawnerAnimals {
 	public int findChunksForSpawning(WorldServer world, boolean hostileMobs, boolean peacefulMobs, boolean animals) {
 		if ((!hostileMobs && !peacefulMobs) || world.playerEntities.size() == 0) {
 			return 0;
-		} else {
-			final Set<ChunkCoordIntPair> trueMap = new HashSet<ChunkCoordIntPair>();
-			final Set<ChunkCoordIntPair> falseMap = new HashSet<ChunkCoordIntPair>();
+		}
 
-			for (final EntityPlayer player : (List<EntityPlayer>) world.playerEntities) {
-				final int centerX = MathHelper.floor_double(player.posX / 16.0D);
-				final int centerY = MathHelper.floor_double(player.posZ / 16.0D);
-				final int range = 8;
+		// Vanilla does fancy stuff with map of booleans. This version
+		// creates a single list that has chunk candidates, and adds a
+		// factor to the size to come up with chunkCount to take into
+		// account the player region "border". Since most players keep
+		// separate this is close to being accurate with Vanilla. Worse case
+		// is if players share a common region the border chunks will be
+		// counted twice meaning a slightly higher density of mobs.
 
-				for (int l = -range; l <= range; ++l) {
-					for (int i1 = -range; i1 <= range; ++i1) {
+		final Set<ChunkCoordIntPair> candidates = new HashSet<ChunkCoordIntPair>();
 
-						final boolean flag3 = l == -range || l == range || i1 == -range || i1 == range;
-						final ChunkCoordIntPair pair = new ChunkCoordIntPair(l + centerX, i1 + centerY);
+		// Collect the chunks that will actually be eligible for
+		// spawning.  Note that the range is 1 less than Vanilla because
+		// the border chunks are ignored in the scan.
+		final int range = 7;
+		for (final EntityPlayer player : (List<EntityPlayer>) world.playerEntities) {
+			final int centerX = MathHelper.floor_double(player.posX / 16.0D);
+			final int centerY = MathHelper.floor_double(player.posZ / 16.0D);
 
-						if (!flag3) {
-							if (falseMap.add(pair))
-								trueMap.remove(pair);
-						} else if (!falseMap.contains(pair)) {
-							trueMap.add(pair);
-						}
-					}
-				}
-			}
+			for (int l = -range; l <= range; ++l)
+				for (int i1 = -range; i1 <= range; ++i1)
+					candidates.add(new ChunkCoordIntPair(l + centerX, i1 + centerY));
+		}
 
-			final int chunkCount = trueMap.size() + falseMap.size();
-			final List<ChunkCoordIntPair> eligibleChunksForSpawning = new ArrayList<ChunkCoordIntPair>(falseMap);
+		// Estimate what the count needs to be adjusted by because we ignored
+		// the border chunks in the scan.  Horse shoes and hand grenades...
+		final int playerCountFactor = ((range * 2) + 3) * 2 * world.playerEntities.size();
+		final int chunkCount = candidates.size() + playerCountFactor;
 
-			int i = 0;
-			ChunkCoordinates spawnPoint = world.getSpawnPoint();
+		// Need to make into a list for shuffling
+		final List<ChunkCoordIntPair> eligibleChunksForSpawning = new ArrayList<ChunkCoordIntPair>(candidates);
 
-			for (final EnumCreatureType critter : EnumCreatureType.values()) {
+		int i = 0;
+		final ChunkCoordinates spawnPoint = world.getSpawnPoint();
 
-				if ((!critter.getPeacefulCreature() || peacefulMobs) && (critter.getPeacefulCreature() || hostileMobs)
-						&& (!critter.getAnimal() || animals)
-						&& world.countEntities(critter, true) <= critter.getMaxNumberOfCreature() * chunkCount / 256) {
+		for (final EnumCreatureType critter : EnumCreatureType.values()) {
 
-					Collections.shuffle(eligibleChunksForSpawning);
+			if ((!critter.getPeacefulCreature() || peacefulMobs) && (critter.getPeacefulCreature() || hostileMobs)
+					&& (!critter.getAnimal() || animals)
+					&& world.countEntities(critter, true) <= critter.getMaxNumberOfCreature() * chunkCount / 256) {
 
-					label110:
+				Collections.shuffle(eligibleChunksForSpawning);
 
-					for (final ChunkCoordIntPair coords : eligibleChunksForSpawning) {
-						final ChunkPosition chunkPosition = func_151350_a(world, coords.chunkXPos, coords.chunkZPos);
-						final int critterX = chunkPosition.chunkPosX;
-						final int critterY = chunkPosition.chunkPosY;
-						final int critterZ = chunkPosition.chunkPosZ;
+				label110:
 
-						final Block block = world.getBlock(critterX, critterY, critterZ);
-						if (!block.isNormalCube() && block.getMaterial() == critter.getCreatureMaterial()) {
-							int i2 = 0;
-							int j2 = 0;
+				for (final ChunkCoordIntPair coords : eligibleChunksForSpawning) {
+					final ChunkPosition chunkPosition = func_151350_a(world, coords.chunkXPos, coords.chunkZPos);
+					final int critterX = chunkPosition.chunkPosX;
+					final int critterY = chunkPosition.chunkPosY;
+					final int critterZ = chunkPosition.chunkPosZ;
 
-							while (j2 < 3) {
-								int cX = critterX;
-								int cY = critterY;
-								int cZ = critterZ;
-								final int noise = 6;
-								BiomeGenBase.SpawnListEntry spawnEntry = null;
-								IEntityLivingData livingData = null;
-								int j3 = 0;
+					final Block block = world.getBlock(critterX, critterY, critterZ);
+					if (!block.isNormalCube() && block.getMaterial() == critter.getCreatureMaterial()) {
+						int i2 = 0;
+						int j2 = 0;
 
-								while (true) {
-									if (j3 < 4) {
-										label103: {
-											cX += world.rand.nextInt(noise) - world.rand.nextInt(noise);
-											cY += world.rand.nextInt(1) - world.rand.nextInt(1);
-											cZ += world.rand.nextInt(noise) - world.rand.nextInt(noise);
+						while (j2 < 3) {
+							int cX = critterX;
+							int cY = critterY;
+							int cZ = critterZ;
+							final int noise = 6;
+							BiomeGenBase.SpawnListEntry spawnEntry = null;
+							IEntityLivingData livingData = null;
+							int j3 = 0;
 
-											// Rearrange conditions from least to most expensive in terms
-											// of computation
-											if (dSquared(spawnPoint, cX, cY, cZ) >= 576
-													&& !playersWithin(world, cX, cY, cZ, 24)
-													&& canCreatureTypeSpawnAtLocation(critter, world, cX, cY, cZ)) {
+							while (true) {
+								if (j3 < 4) {
+									label103: {
+										cX += world.rand.nextInt(noise) - world.rand.nextInt(noise);
+										cY += world.rand.nextInt(1) - world.rand.nextInt(1);
+										cZ += world.rand.nextInt(noise) - world.rand.nextInt(noise);
+
+										// Rearrange conditions from least
+										// to most expensive in terms
+										// of computation.  Computations are
+										// ints rather than floats to make
+										// things a little bit faster.
+										if (dSquared(spawnPoint, cX, cY, cZ) >= 576
+												&& !anyPlayersWithin(world, cX, cY, cZ, 24)
+												&& canCreatureTypeSpawnAtLocation(critter, world, cX, cY, cZ)) {
+
+											if (spawnEntry == null) {
+												spawnEntry = world.spawnRandomCreature(critter, cX, cY, cZ);
 
 												if (spawnEntry == null) {
-													spawnEntry = world.spawnRandomCreature(critter, cX, cY, cZ);
-
-													if (spawnEntry == null) {
-														break label103;
-													}
+													break label103;
 												}
-
-												final EntityLiving entityliving = createCritter(world,
-														spawnEntry.entityClass);
-												if (entityliving == null)
-													return i;
-
-												final float cXf = (float) cX + 0.5F;
-												final float cYf = (float) cY;
-												final float cZf = (float) cZ + 0.5F;
-
-												entityliving.setLocationAndAngles((double) cXf, (double) cYf,
-														(double) cZf, world.rand.nextFloat() * 360.0F, 0.0F);
-
-												final Result canSpawn = ForgeEventFactory.canEntitySpawn(entityliving,
-														world, cXf, cYf, cZf);
-												if (canSpawn == Result.ALLOW || (canSpawn == Result.DEFAULT
-														&& entityliving.getCanSpawnHere())) {
-													++i2;
-													world.spawnEntityInWorld(entityliving);
-													if (!ForgeEventFactory.doSpecialSpawn(entityliving, world, cXf, cYf,
-															cZf)) {
-														livingData = entityliving.onSpawnWithEgg(livingData);
-													}
-
-													if (j2 >= ForgeEventFactory.getMaxSpawnPackSize(entityliving)) {
-														continue label110;
-													}
-												}
-
-												i += i2;
 											}
 
-											++j3;
-											continue;
-										}
-									}
+											final EntityLiving entityliving = createCritter(world,
+													spawnEntry.entityClass);
+											if (entityliving == null)
+												return i;
 
-									++j2;
-									break;
+											final float cXf = (float) cX + 0.5F;
+											final float cYf = (float) cY;
+											final float cZf = (float) cZ + 0.5F;
+
+											entityliving.setLocationAndAngles((double) cXf, (double) cYf, (double) cZf,
+													world.rand.nextFloat() * 360.0F, 0.0F);
+
+											final Result canSpawn = ForgeEventFactory.canEntitySpawn(entityliving,
+													world, cXf, cYf, cZf);
+											if (canSpawn == Result.ALLOW
+													|| (canSpawn == Result.DEFAULT && entityliving.getCanSpawnHere())) {
+												++i2;
+												world.spawnEntityInWorld(entityliving);
+												if (!ForgeEventFactory.doSpecialSpawn(entityliving, world, cXf, cYf,
+														cZf)) {
+													livingData = entityliving.onSpawnWithEgg(livingData);
+												}
+
+												if (j2 >= ForgeEventFactory.getMaxSpawnPackSize(entityliving)) {
+													continue label110;
+												}
+											}
+
+											i += i2;
+										}
+
+										++j3;
+										continue;
+									}
 								}
+
+								++j2;
+								break;
 							}
 						}
 					}
 				}
 			}
-
-			return i;
 		}
+
+		return i;
 	}
 
 	/**

@@ -439,7 +439,7 @@ public class ChunkProviderServer implements IChunkProvider {
 		if (canSave()) {
 
 			if (this.newChunksToUnload > 0) {
-
+				
 				// This loop can get expensive depending on the number of chunk
 				// loaded chunks that are currently active.
 				for (final ChunkCoordIntPair forced : this.worldObj.getPersistentChunks().keySet()) {

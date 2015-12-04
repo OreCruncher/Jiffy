@@ -28,17 +28,22 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 
 import static org.objectweb.asm.Opcodes.*;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 import org.objectweb.asm.util.CheckClassAdapter;
 
@@ -56,6 +61,9 @@ public class Transformer implements IClassTransformer {
 
 	// Obsfucation mapping of methods to SRG
 	private static Map<String, Map<String, String>> obsRemap = new HashMap<String, Map<String, String>>();
+	
+	// Class prefixes to replace Random class
+	private static final List<String> randomReplaceExclude = new ArrayList<String>();
 
 	static {
 
@@ -145,7 +153,7 @@ public class Transformer implements IClassTransformer {
 
 		targets.put("mt", "world.WorldServer");
 		targets.put("mv", "world.WorldServer$ServerBlockEventList");
-		
+
 		targets.put("aho", "world.SpawnerAnimals");
 
 		// Obsfucation mapping - yay obsfucation!
@@ -263,6 +271,22 @@ public class Transformer implements IClassTransformer {
 				"func_77191_a");
 		map.put("findChunksForSpawning(Lnet/minecraft/world/WorldServer;ZZZ)I", "func_77192_a");
 		obsRemap.put("SpawnerAnimals", map);
+		
+		
+		// Random excludes
+		randomReplaceExclude.add("java");
+		randomReplaceExclude.add("org/objectweb");
+		randomReplaceExclude.add("org/apache");
+		randomReplaceExclude.add("com/google");
+		randomReplaceExclude.add("com/mia"); // DecoCraft
+	}
+	
+	private static boolean excludeFromRandomPatch(final String name) {
+		final String theName = name.replace(".", "/");
+		for(final String ex: randomReplaceExclude)
+			if(theName.startsWith(ex))
+				return true;
+		return false;
 	}
 
 	private byte[] getClassBytes(final String clazz) {
@@ -295,11 +319,12 @@ public class Transformer implements IClassTransformer {
 
 	@Override
 	public byte[] transform(String name, String transformedName, byte[] basicClass) {
+
 		final String src = targets.get(name);
 		if (src != null) {
 			final byte[] newBytes = getClassBytes(src);
 			if (newBytes != null) {
-				logger.info("Loading '" + name + "' from '" + src + "'");
+				logger.debug("Loading '" + name + "' from '" + src + "'");
 				final ClassReader reader = new ClassReader(newBytes);
 				final ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
 				final RenameMapper mapper = new RenameMapper(TransformLoader.runtimeDeobEnabled ? obsRemap : null);
@@ -307,18 +332,20 @@ public class Transformer implements IClassTransformer {
 				reader.accept(adapter, ClassReader.EXPAND_FRAMES);
 				final byte[] result = writer.toByteArray();
 				if (verifyClassBytes(result)) {
-					logger.info("Load success '" + name + "'!");
+					logger.debug("Load success '" + name + "'!");
 					return result;
 				}
 			} else {
 				logger.warn("Unable to find classbytes for " + src);
 			}
 		} else if ("net.minecraft.util.MathHelper".equals(name) || "qh".equals(name)) {
-			logger.info("Transforming MathHelper...");
+			logger.debug("Transforming MathHelper...");
 			return transformMathUtils(basicClass);
 		} else if ("net.minecraft.block.BlockLeaves".equals(name) || "alt".equals(name)) {
-			logger.info("Transforming BlockLeaves...");
+			logger.debug("Transforming BlockLeaves...");
 			return transformBlockLeaves(basicClass);
+		} else if (!excludeFromRandomPatch(name)) {
+			return replaceRandom(name, basicClass);
 		}
 
 		return basicClass;
@@ -388,7 +415,6 @@ public class Transformer implements IClassTransformer {
 				m.instructions.add(new MethodInsnNode(INVOKESTATIC, "org/blockartistry/block/BlockLeaves",
 						targetName[0], sig, false));
 				m.instructions.add(new InsnNode(RETURN));
-				logger.info("Hooked beginLeavesDecay");
 				break;
 			}
 		}
@@ -396,5 +422,45 @@ public class Transformer implements IClassTransformer {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		cn.accept(cw);
 		return cw.toByteArray();
+	}
+
+	private byte[] replaceRandom(final String name, final byte[] classBytes) {
+
+		final String randomToReplace = "java/util/Random";
+		final String newRandom = "org/blockartistry/util/XorShiftRandom";
+
+		boolean madeUpdate = false;
+
+		final ClassReader cr = new ClassReader(classBytes);
+		final ClassNode cn = new ClassNode(ASM5);
+		cr.accept(cn, 0);
+
+		for (final MethodNode m : cn.methods) {
+			final ListIterator<AbstractInsnNode> itr = m.instructions.iterator();
+			while (itr.hasNext()) {
+				final AbstractInsnNode node = itr.next();
+				if (node.getOpcode() == NEW) {
+					final TypeInsnNode theNew = (TypeInsnNode) node;
+					if (randomToReplace.equals(theNew.desc)) {
+						m.instructions.set(node, new TypeInsnNode(NEW, newRandom));
+						madeUpdate = true;
+					}
+				} else if (node.getOpcode() == INVOKESPECIAL) {
+					final MethodInsnNode theInvoke = (MethodInsnNode) node;
+					if (randomToReplace.equals(theInvoke.owner)) {
+						m.instructions.set(node,
+								new MethodInsnNode(INVOKESPECIAL, newRandom, theInvoke.name, theInvoke.desc, false));
+					}
+				}
+			}
+		}
+
+		if (madeUpdate) {
+			logger.debug("Replaced Random in " + name);
+			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+			cn.accept(cw);
+			return cw.toByteArray();
+		}
+		return classBytes;
 	}
 }
