@@ -32,9 +32,19 @@ package org.blockartistry.util;
  * 
  * Note that these methods are injected into MathHelper methods to redirect the
  * call to this helper.
+ * 
+ * Second version based on this post:
+ * https://web.archive.org/web/20100613230051/http://www.devmaster.net/forums/showthread.php?t=5784
+ * 
+ * Benefit is that it avoids the LUT and having to deal with cache lines and
+ * the like.  If a loop were to be done calling the Riven methods and compared
+ * to the calculation they would be similar in performance.  However, with less
+ * frequent calls the calculation method would be better because it avoids
+ * the table, and performance can be much greater.
  */
 public class MathHelper {
 
+	/*
 	private static final int SIN_BITS, SIN_MASK, SIN_COUNT;
 	private static final float radFull, radToIndex;
 	private static final float degFull, degToIndex;
@@ -71,5 +81,33 @@ public class MathHelper {
 
 	public static final float cos(float rad) {
 		return cos[(int) (rad * radToIndex) & SIN_MASK];
+	}
+	*/
+	
+	private final static float PI = (float)Math.PI;
+	private final static float RAD_FULL = PI * 2;
+	private final static float B = 4.0F / PI;
+	private final static float C = -4.0F / (PI * PI);
+	private final static float P = 0.225F;
+	private final static float COS_ADD = PI / 2.0F;
+	@SuppressWarnings("unused")
+	private final static float degreeToRad = PI / 180F;
+
+	public static float sin(float rads) {
+		// Wrap the rads to be between -PI and PI.
+		rads = rads % RAD_FULL;
+		if(rads < -PI)
+			rads += RAD_FULL;
+		else if(rads > PI)
+			rads -= RAD_FULL;
+		
+		// Do the initial calc...
+		float y = B * rads + C * rads * ((rads < 0) ? -rads : rads);
+		// ...and improve the accuracy a bit
+		return P * (y * ((y < 0) ? -y : y) - y) + y;
+	}
+	
+	public static float cos(float rads) {
+		return sin(rads + COS_ADD);
 	}
 }

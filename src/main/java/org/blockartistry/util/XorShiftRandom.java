@@ -123,7 +123,7 @@ public class XorShiftRandom extends Random {
 	static final String BadRange = "bound must be greater than origin";
 	static final String BadSize = "size must be non-negative";
 
-	final long internalNextLong(long origin, long bound) {
+	private long internalNextLong(long origin, long bound) {
 		long r = mix64(nextSeed());
 		if (origin < bound) {
 			long n = bound - origin, m = n - 1;
@@ -143,7 +143,7 @@ public class XorShiftRandom extends Random {
 		return r;
 	}
 
-	final int internalNextInt(int origin, int bound) {
+	private int internalNextInt(int origin, int bound) {
 		int r = mix32(nextSeed());
 		if (origin < bound) {
 			int n = bound - origin, m = n - 1;
@@ -161,7 +161,7 @@ public class XorShiftRandom extends Random {
 		return r;
 	}
 
-	final double internalNextDouble(double origin, double bound) {
+	private double internalNextDouble(double origin, double bound) {
 		double r = (nextLong() >>> 11) * DOUBLE_UNIT;
 		if (origin < bound) {
 			r = r * (bound - origin) + origin;
