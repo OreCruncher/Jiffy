@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Essentially swipe the ThreadLocalRandom code, but not make it thread
- * specific.  ThreadLocalRandom is extremely fast, and this version avoids
+ * specific.  ThreadLocalRandom is fast, and this version avoids
  * synchronization and permits the use of seed values to maintain the
  * deterministic random behavior when using a specific world seed.
  * 
@@ -61,7 +61,6 @@ public class XorShiftRandom extends Random {
 	private static final float FLOAT_UNIT = 0x1.0p-24f; // 1.0f / (1 << 24)
 
 	private Double nextLocalGaussian = null;
-
 	private long seed;
 
 	private static long mix64(long z) {
@@ -106,12 +105,16 @@ public class XorShiftRandom extends Random {
 	public XorShiftRandom(final long seed) {
 		this.seed = seed;
 	}
+	
+	public XorShiftRandom(final long seed1, final long seed2) {
+		this(mix64(seed1) ^ mix64(seed2));
+	}
 
 	public void setSeed(long seed) {
 		this.seed = seed;
 	}
 
-	final long nextSeed() {
+	private final long nextSeed() {
 		return this.seed += GAMMA;
 	}
 
@@ -119,11 +122,10 @@ public class XorShiftRandom extends Random {
 		return (int) (mix64(nextSeed()) >>> (64 - bits));
 	}
 
-	static final String BadBound = "bound must be positive";
-	static final String BadRange = "bound must be greater than origin";
-	static final String BadSize = "size must be non-negative";
-
-	private long internalNextLong(long origin, long bound) {
+	private static final String BadBound = "bound must be positive";
+	private static final String BadRange = "bound must be greater than origin";
+	
+	private long internalNextLong0(long origin, long bound) {
 		long r = mix64(nextSeed());
 		if (origin < bound) {
 			long n = bound - origin, m = n - 1;
@@ -143,7 +145,7 @@ public class XorShiftRandom extends Random {
 		return r;
 	}
 
-	private int internalNextInt(int origin, int bound) {
+	private int internalNextInt0(int origin, int bound) {
 		int r = mix32(nextSeed());
 		if (origin < bound) {
 			int n = bound - origin, m = n - 1;
@@ -161,7 +163,7 @@ public class XorShiftRandom extends Random {
 		return r;
 	}
 
-	private double internalNextDouble(double origin, double bound) {
+	private double internalNextDouble0(double origin, double bound) {
 		double r = (nextLong() >>> 11) * DOUBLE_UNIT;
 		if (origin < bound) {
 			r = r * (bound - origin) + origin;
@@ -192,7 +194,7 @@ public class XorShiftRandom extends Random {
 	public int nextInt(int origin, int bound) {
 		if (origin >= bound)
 			throw new IllegalArgumentException(BadRange);
-		return internalNextInt(origin, bound);
+		return internalNextInt0(origin, bound);
 	}
 
 	public long nextLong() {
@@ -216,7 +218,7 @@ public class XorShiftRandom extends Random {
 	public long nextLong(long origin, long bound) {
 		if (origin >= bound)
 			throw new IllegalArgumentException(BadRange);
-		return internalNextLong(origin, bound);
+		return internalNextLong0(origin, bound);
 	}
 
 	public double nextDouble() {
@@ -235,7 +237,7 @@ public class XorShiftRandom extends Random {
 	public double nextDouble(double origin, double bound) {
 		if (!(origin < bound))
 			throw new IllegalArgumentException(BadRange);
-		return internalNextDouble(origin, bound);
+		return internalNextDouble0(origin, bound);
 	}
 
 	public boolean nextBoolean() {

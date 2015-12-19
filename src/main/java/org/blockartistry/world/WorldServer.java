@@ -155,7 +155,7 @@ public class WorldServer extends World {
 
 	// Helper method to construct objects that expect a
 	// Minecraft WorldServer parameter rather than the
-	// class override.  At runtime things will work.
+	// class override. At runtime things will work.
 	@SuppressWarnings("unchecked")
 	private static <T> T produce(Class<T> clazz, Object... init) {
 		try {
@@ -179,16 +179,14 @@ public class WorldServer extends World {
 		// because of initial world gen.
 		if (this.entityIdMap == null)
 			this.entityIdMap = new IntHashMap();
-		if(this.pendingTickListEntries == null)
+		if (this.pendingTickListEntries == null)
 			this.pendingTickListEntries = new PriorityQueue<NextTickListEntry>(QUEUE_SIZE);
-		if(this.containment == null)
+		if (this.containment == null)
 			containment = new HashSet<NextTickListEntry>(QUEUE_SIZE);
 
 		this.rules = this.getGameRules();
 
 		this.worldTeleporter = produce(Teleporter.class, this);
-		// this.worldTeleporter = new
-		// Teleporter((net.minecraft.world.WorldServer)thising.cast(this));
 		this.worldScoreboard = new ServerScoreboard(p_i45284_1_);
 		ScoreboardSaveData scoreboardsavedata = (ScoreboardSaveData) this.mapStorage.loadData(ScoreboardSaveData.class,
 				"scoreboard");
@@ -198,17 +196,10 @@ public class WorldServer extends World {
 			this.mapStorage.setData("scoreboard", scoreboardsavedata);
 		}
 
-		if (!((Object) this instanceof WorldServerMulti)) // Forge: We fix the
-															// global
-															// mapStorage, which
-															// causes us to
-															// share scoreboards
-															// early. So don't
-															// associate the
-															// save data with
-															// the temporary
-															// scoreboard
-		{
+		// Forge: We fix the global mapStorage, which causes us to
+		// share scoreboards early. So don't associate the save data
+		// with the temporary scoreboard
+		if (!((Object) this instanceof WorldServerMulti)) {
 			scoreboardsavedata.func_96499_a(this.worldScoreboard);
 		}
 		((ServerScoreboard) this.worldScoreboard).func_96547_a(scoreboardsavedata);
@@ -256,8 +247,8 @@ public class WorldServer extends World {
 		this.theProfiler.endStartSection("mobSpawner");
 
 		if (this.rules.getGameRuleBooleanValue("doMobSpawning")) {
-			this.animalSpawner.findChunksForSpawning(this, this.spawnHostileMobs,
-					this.spawnPeacefulMobs, this.worldInfo.getWorldTotalTime() % 400L == 0L);
+			this.animalSpawner.findChunksForSpawning(this, this.spawnHostileMobs, this.spawnPeacefulMobs,
+					this.worldInfo.getWorldTotalTime() % 400L == 0L);
 		}
 		// END
 
@@ -514,8 +505,9 @@ public class WorldServer extends World {
 			this.func_147446_b(x, y, z, block, delay, priority);
 	}
 
+	// Used by the chunk load routines to insert a tick event from a save.
+	// Newly used by the existing logic to have a common funnel point.
 	public void func_147446_b(int x, int y, int z, Block block, int delay, int priority) {
-
 		if (block.getMaterial() == Material.air)
 			return;
 
@@ -723,12 +715,12 @@ public class WorldServer extends World {
 	protected void initialize(WorldSettings settings) {
 		// This is here because the World CTOR triggers world
 		// gen that can occur *before* WorldServer has a chance
-		// to initialize.  Bad OOP practice. :\
+		// to initialize. :\
 		if (this.entityIdMap == null)
 			this.entityIdMap = new IntHashMap();
-		if(this.pendingTickListEntries == null)
+		if (this.pendingTickListEntries == null)
 			this.pendingTickListEntries = new PriorityQueue<NextTickListEntry>(QUEUE_SIZE);
-		if(this.containment == null)
+		if (this.containment == null)
 			containment = new HashSet<NextTickListEntry>(QUEUE_SIZE);
 
 		this.createSpawnPosition(settings);
@@ -881,8 +873,8 @@ public class WorldServer extends World {
 	 * Returns the Entity with the given ID, or null if it doesn't exist in this
 	 * World.
 	 */
-	public Entity getEntityByID(int p_73045_1_) {
-		return (Entity) this.entityIdMap.lookup(p_73045_1_);
+	public Entity getEntityByID(int entityId) {
+		return (Entity) this.entityIdMap.lookup(entityId);
 	}
 
 	/**
@@ -909,17 +901,17 @@ public class WorldServer extends World {
 	 * returns a new explosion. Does initiation (at time of writing Explosion is
 	 * not finished)
 	 */
-	public Explosion newExplosion(Entity p_72885_1_, double p_72885_2_, double p_72885_4_, double p_72885_6_,
-			float p_72885_8_, boolean p_72885_9_, boolean p_72885_10_) {
-		Explosion explosion = new Explosion(this, p_72885_1_, p_72885_2_, p_72885_4_, p_72885_6_, p_72885_8_);
-		explosion.isFlaming = p_72885_9_;
-		explosion.isSmoking = p_72885_10_;
+	public Explosion newExplosion(Entity p_72885_1_, double x, double y, double z, float p_72885_8_, boolean isFlaming,
+			boolean isSmoking) {
+		Explosion explosion = new Explosion(this, p_72885_1_, x, y, z, p_72885_8_);
+		explosion.isFlaming = isFlaming;
+		explosion.isSmoking = isSmoking;
 		if (net.minecraftforge.event.ForgeEventFactory.onExplosionStart(this, explosion))
 			return explosion;
 		explosion.doExplosionA();
 		explosion.doExplosionB(false);
 
-		if (!p_72885_10_) {
+		if (!isSmoking) {
 			explosion.affectedBlockPositions.clear();
 		}
 
@@ -928,10 +920,10 @@ public class WorldServer extends World {
 		while (iterator.hasNext()) {
 			EntityPlayer entityplayer = (EntityPlayer) iterator.next();
 
-			if (entityplayer.getDistanceSq(p_72885_2_, p_72885_4_, p_72885_6_) < 4096.0D) {
+			if (entityplayer.getDistanceSq(x, y, z) < 4096.0D) {
 				((EntityPlayerMP) entityplayer).playerNetServerHandler
-						.sendPacket(new S27PacketExplosion(p_72885_2_, p_72885_4_, p_72885_6_, p_72885_8_,
-								explosion.affectedBlockPositions, (Vec3) explosion.func_77277_b().get(entityplayer)));
+						.sendPacket(new S27PacketExplosion(x, y, z, p_72885_8_, explosion.affectedBlockPositions,
+								(Vec3) explosion.func_77277_b().get(entityplayer)));
 			}
 		}
 

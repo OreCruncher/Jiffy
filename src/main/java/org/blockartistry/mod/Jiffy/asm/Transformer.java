@@ -61,7 +61,7 @@ public class Transformer implements IClassTransformer {
 
 	// Obsfucation mapping of methods to SRG
 	private static Map<String, Map<String, String>> obsRemap = new HashMap<String, Map<String, String>>();
-	
+
 	// Class prefixes to replace Random class
 	private static final List<String> randomReplaceExclude = new ArrayList<String>();
 
@@ -271,20 +271,19 @@ public class Transformer implements IClassTransformer {
 				"func_77191_a");
 		map.put("findChunksForSpawning(Lnet/minecraft/world/WorldServer;ZZZ)I", "func_77192_a");
 		obsRemap.put("SpawnerAnimals", map);
-		
-		
+
 		// Random excludes
 		randomReplaceExclude.add("java");
 		randomReplaceExclude.add("org/objectweb");
 		randomReplaceExclude.add("org/apache");
 		randomReplaceExclude.add("com/google");
-		//randomReplaceExclude.add("com/mia"); // DecoCraft
+		randomReplaceExclude.add("org/blockartistry/util/MathHelper");
 	}
-	
+
 	private static boolean excludeFromRandomPatch(final String name) {
 		final String theName = name.replace(".", "/");
-		for(final String ex: randomReplaceExclude)
-			if(theName.startsWith(ex))
+		for (final String ex : randomReplaceExclude)
+			if (theName.startsWith(ex))
 				return true;
 		return false;
 	}
@@ -333,7 +332,7 @@ public class Transformer implements IClassTransformer {
 				final byte[] result = writer.toByteArray();
 				if (verifyClassBytes(result)) {
 					logger.debug("Load success '" + name + "'!");
-					return replaceRandom(name, result);
+					return replaceMath(name, replaceRandom(name, result));
 				}
 			} else {
 				logger.warn("Unable to find classbytes for " + src);
@@ -345,7 +344,7 @@ public class Transformer implements IClassTransformer {
 			logger.debug("Transforming BlockLeaves...");
 			return transformBlockLeaves(basicClass);
 		} else if (!excludeFromRandomPatch(name)) {
-			return replaceRandom(name, basicClass);
+			return replaceMath(name, replaceRandom(name, basicClass));
 		}
 
 		return basicClass;
@@ -450,9 +449,9 @@ public class Transformer implements IClassTransformer {
 				} else if (node.getOpcode() == INVOKESPECIAL) {
 					final MethodInsnNode theInvoke = (MethodInsnNode) node;
 					if (randomToReplace.equals(theInvoke.owner)) {
-						if(foundNew) {
-							m.instructions.set(node,
-									new MethodInsnNode(INVOKESPECIAL, newRandom, theInvoke.name, theInvoke.desc, false));
+						if (foundNew) {
+							m.instructions.set(node, new MethodInsnNode(INVOKESPECIAL, newRandom, theInvoke.name,
+									theInvoke.desc, false));
 							foundNew = false;
 						}
 					}
@@ -462,6 +461,41 @@ public class Transformer implements IClassTransformer {
 
 		if (madeUpdate) {
 			logger.debug("Replaced Random in " + name);
+			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+			cn.accept(cw);
+			return cw.toByteArray();
+		}
+		return classBytes;
+	}
+
+	private byte[] replaceMath(final String name, final byte[] classBytes) {
+
+		boolean madeUpdate = false;
+
+		final ClassReader cr = new ClassReader(classBytes);
+		final ClassNode cn = new ClassNode(ASM5);
+		cr.accept(cn, 0);
+
+		for (final MethodNode m : cn.methods) {
+			final ListIterator<AbstractInsnNode> itr = m.instructions.iterator();
+			while (itr.hasNext()) {
+				final AbstractInsnNode node = itr.next();
+				if (node.getOpcode() == INVOKESTATIC) {
+					final MethodInsnNode theInvoke = (MethodInsnNode) node;
+					if ("java/lang/Math".equals(theInvoke.owner)) {
+						if ("sin".equals(theInvoke.name) || "cos".equals(theInvoke.name)
+								|| "random".equals(theInvoke.name)) {
+							madeUpdate = true;
+							m.instructions.set(node, new MethodInsnNode(INVOKESTATIC,
+									"org/blockartistry/util/MathHelper", theInvoke.name, theInvoke.desc, false));
+						}
+					}
+				}
+			}
+		}
+
+		if (madeUpdate) {
+			logger.debug("Replaced Math in " + name);
 			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 			cn.accept(cw);
 			return cw.toByteArray();

@@ -33,6 +33,7 @@ import java.util.Set;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLiving;
 import net.minecraft.entity.EnumCreatureType;
 import net.minecraft.entity.IEntityLivingData;
@@ -52,7 +53,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.event.ForgeEventFactory;
 
 public final class SpawnerAnimals {
-	
+
 	protected static ChunkPosition func_151350_a(final World world, final int chunkX, final int chunkZ) {
 		final Chunk chunk = world.getChunkFromChunkCoords(chunkX, chunkZ);
 		final int x = chunkX * 16 + world.rand.nextInt(16);
@@ -64,33 +65,60 @@ public final class SpawnerAnimals {
 
 	private static EntityLiving createCritter(final World world, final Class<?> entityClass) {
 		try {
-			return (EntityLiving) entityClass.getConstructor(new Class[] { World.class })
-					.newInstance(new Object[] { world });
-		} catch (Exception exception) {
+			return (EntityLiving) entityClass.getConstructor(World.class).newInstance(world);
+		} catch (final Exception exception) {
 			exception.printStackTrace();
 		}
 		return null;
 	}
 
 	private static long dSquared(final ChunkCoordinates coord, final int x, final int y, final int z) {
-		final long dX = x - coord.posX;
-		final long dY = y - coord.posY;
-		final long dZ = z - coord.posZ;
-		return (dX * dX) + (dY * dY) + (dZ * dZ);
+		return (long) coord.getDistanceSquared(x, y, z);
+		/*
+		 * final long dX = x - coord.posX; final long dY = y - coord.posY; final
+		 * long dZ = z - coord.posZ; return (dX * dX) + (dY * dY) + (dZ * dZ);
+		 */
 	}
 
 	@SuppressWarnings("unchecked")
 	private static boolean anyPlayersWithin(final World world, final int x, final int y, final int z, final int dist) {
-		final long dSq = dist * dist;
-		for (final EntityPlayer entityPlayer : (List<EntityPlayer>) world.playerEntities) {
-			final ChunkCoordinates coord = new ChunkCoordinates((int)entityPlayer.posX, (int)entityPlayer.posY,
-					(int)entityPlayer.posZ);
-			if (dSquared(coord, x, y, z) <= dSq)
+		final double dSq = dist * dist;
+		for (final EntityPlayer entityPlayer : (List<EntityPlayer>) world.playerEntities)
+			if (entityPlayer.getDistanceSq(x, y, z) <= dSq)
 				return true;
-		}
-
 		return false;
 	}
+
+	@SuppressWarnings("unchecked")
+	public static int countEntities(final World world, final EnumCreatureType type) {
+		int count = 0;
+		for (final Entity entity : (List<Entity>) world.loadedEntityList)
+			if (entity.isCreatureType(type, true))
+				count++;
+		return count;
+	}
+
+	// Collect the chunks that will actually be eligible for
+	// spawning. Note that the RANGE is 1 less than Vanilla because
+	// the border chunks are ignored in the scan.
+	private static final int RANGE = 7;
+
+	// The chunk area covered by each player. The idea is to take
+	// the total chunks in the candidate list (plus factor) and
+	// ratio it against the area per player. This gives a scaling
+	// factor to apply to the max possible critters per type. The
+	// larger the area, the more critters permitted.
+	//
+	// Note that the Vanilla version hard coded the area to 256
+	// chunks per player. This assumes a 16x16 chunk region around
+	// the player. The reality is that the eligible spawn range is
+	// 15x15.
+	private static final int CHUNKS_PER_PLAYER = (RANGE * 2 + 1) * (RANGE * 2 + 1);
+
+	// Additional chunks to add per player when determining
+	// the creature scale factor.  Essentially the total chunks in
+	// the border region defined by RANGE.
+	private static final int PLAYER_COUNT_FACTOR = ((RANGE * 2) + 3) * 2;
 
 	/**
 	 * adds all chunks within the spawn radius of the players to
@@ -113,40 +141,40 @@ public final class SpawnerAnimals {
 
 		final Set<ChunkCoordIntPair> candidates = new HashSet<ChunkCoordIntPair>();
 
-		// Collect the chunks that will actually be eligible for
-		// spawning.  Note that the range is 1 less than Vanilla because
-		// the border chunks are ignored in the scan.
-		final int range = 7;
 		for (final EntityPlayer player : (List<EntityPlayer>) world.playerEntities) {
 			final int centerX = MathHelper.floor_double(player.posX / 16.0D);
 			final int centerY = MathHelper.floor_double(player.posZ / 16.0D);
 
-			for (int l = -range; l <= range; ++l)
-				for (int i1 = -range; i1 <= range; ++i1)
+			for (int l = -RANGE; l <= RANGE; ++l)
+				for (int i1 = -RANGE; i1 <= RANGE; ++i1)
 					candidates.add(new ChunkCoordIntPair(l + centerX, i1 + centerY));
 		}
 
 		// Estimate what the count needs to be adjusted by because we ignored
-		// the border chunks in the scan.  Horse shoes and hand grenades...
-		final int playerCountFactor = ((range * 2) + 3) * 2 * world.playerEntities.size();
-		final int chunkCount = candidates.size() + playerCountFactor;
+		// the border chunks in the scan. Horse shoes and hand grenades...
+		final int chunkCount = candidates.size() + (PLAYER_COUNT_FACTOR * world.playerEntities.size());
 
-		// Need to make into a list for shuffling
+		// Need to make into a list for shuffling.  Do an initial shuffle
+		// to help mitigate the deterministic nature of the list because
+		// of how it was generated (i.e. there is an order to it).  Supply
+		// our own random function because it will be replaced with a fast
+		// random when Forge loads the mod.
 		final List<ChunkCoordIntPair> eligibleChunksForSpawning = new ArrayList<ChunkCoordIntPair>(candidates);
+		Collections.shuffle(eligibleChunksForSpawning, world.rand);
 
 		int i = 0;
 		final ChunkCoordinates spawnPoint = world.getSpawnPoint();
 
 		for (final EnumCreatureType critter : EnumCreatureType.values()) {
 
+			// The below logic is interesting in that creature counts are based on
+			// current logged on players.  I have seen cases where the bulk of the
+			// creatures spawn around a player rather than being evenly distributed
+			// throughout the possible chunks.  It's pretty funny, actually.
 			if ((!critter.getPeacefulCreature() || peacefulMobs) && (critter.getPeacefulCreature() || hostileMobs)
-					&& (!critter.getAnimal() || animals)
-					&& world.countEntities(critter, true) <= critter.getMaxNumberOfCreature() * chunkCount / 256) {
+					&& (!critter.getAnimal() || animals) && countEntities(world,
+							critter) <= (critter.getMaxNumberOfCreature() * chunkCount) / CHUNKS_PER_PLAYER) {
 
-				// Supply our own random instance.  During Forge loading
-				// the reference will be transformed to a fast random 
-				// algorithm thus avoiding the use of the Java Random class
-				// within the SDK.
 				Collections.shuffle(eligibleChunksForSpawning, world.rand);
 
 				label110:
@@ -180,7 +208,7 @@ public final class SpawnerAnimals {
 
 										// Rearrange conditions from least
 										// to most expensive in terms
-										// of computation.  Computations are
+										// of computation. Computations are
 										// ints rather than floats to make
 										// things a little bit faster.
 										if (dSquared(spawnPoint, cX, cY, cZ) >= 576
